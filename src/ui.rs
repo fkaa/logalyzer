@@ -145,13 +145,13 @@ impl AppState {
         if selection < 50 && self.rows.offset >= 50 {
             self.db.get_rows(self.rows.offset - 100, 300);
             self.table_state.select(Some(selection + 100));
-            *self.table_state.offset_mut() -= 100;
+            *self.table_state.offset_mut() += 100;
         }
 
         if selection > 200 {
             self.db.get_rows(self.rows.offset + 100, 300);
-            self.table_state.select(Some(selection - 100));
-            *self.table_state.offset_mut() += 100;
+            self.table_state.select(Some(selection - 99));
+            *self.table_state.offset_mut() -= 100;
         }
     }
 
