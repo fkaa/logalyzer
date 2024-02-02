@@ -107,7 +107,7 @@ impl AppState {
         );
 
         if let Mode::Filter = self.mode {
-            let block = Block::default().title("Edit filter").borders(Borders::ALL);
+            self.filter_text_area.set_block(Block::default().title("Edit filter(s)").borders(Borders::ALL));
 
             let area = centered_rect(60, 60, area);
             frame.render_widget(Clear, area); //this clears out the background

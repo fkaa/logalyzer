@@ -17,6 +17,7 @@ mod db;
 mod parse;
 mod ui;
 mod logalang;
+mod logalang_converter;
 
 const BATCH_SIZE: usize = 64;
 

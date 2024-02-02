@@ -28,7 +28,7 @@ impl FilterRule {
     }
 }
 
-enum Filter {
+pub enum Filter {
     And(Box<Filter>, Box<Filter>),
     Or(Box<Filter>, Box<Filter>),
     Not(Box<Filter>),
