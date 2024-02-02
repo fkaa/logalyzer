@@ -114,7 +114,7 @@ fn parse_line(line: String) -> Option<LogRow> {
     let s = s.parse::<u32>().ok()?;
     let ms = ms.parse::<u32>().ok()?;
 
-    let time_unixtime = NaiveDate::from_ymd(y, m, d).and_hms_milli(h, min, s, ms);
+    let time_unixtime = NaiveDate::from_ymd_opt(y, m, d)?.and_hms_milli_opt(h, min, s, ms).unwrap();
     let time_unixtime = time_unixtime.timestamp_millis();
 
     Some(LogRow {

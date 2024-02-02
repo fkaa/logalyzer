@@ -1,5 +1,4 @@
 use std::io::{self, stdout};
-use std::io::{BufRead, Read};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;

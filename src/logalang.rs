@@ -5,7 +5,6 @@ use pest_derive::Parser;
 #[grammar = "logalang.pest"]
 pub struct LogalangParser;
 
-
 #[cfg(test)]
 mod test{
     use super::*;
@@ -14,7 +13,7 @@ mod test{
     fn test() {
         let input = "a=\"b\"";
 
-        let mut result = LogalangParser::parse(Rule::calculation, input).unwrap();
+        let mut result = LogalangParser::parse(Rule::filter, input).unwrap();
 
         let first = result.next().unwrap();
         assert_eq!(Rule::filter, first.as_rule());
@@ -28,7 +27,7 @@ mod test{
     fn test2() {
         let input = "asdf=!\"b1234\"";
 
-        let mut result = LogalangParser::parse(Rule::calculation, input).unwrap();
+        let mut result = LogalangParser::parse(Rule::filter, input).unwrap();
 
         let first = result.next().unwrap();
         assert_eq!(Rule::filter, first.as_rule());
@@ -40,8 +39,5 @@ mod test{
         let expr_matches = matches[1].clone().into_inner().collect::<Vec<_>>();
         assert_eq!(Rule::not, expr_matches[0].as_rule());
         assert_eq!(Rule::string, expr_matches[1].as_rule());
-
-
-
     }
 }

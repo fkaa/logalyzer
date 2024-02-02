@@ -1,14 +1,14 @@
 use std::sync::mpsc;
 use std::time::Instant;
-use std::{string, thread};
+use std::{thread};
 
 use rusqlite::{params, Connection, ToSql};
 
 use crate::parse::LogRow;
 
 pub struct FilterRule {
-    column_name: String,
-    rules: Vec<Filter>,
+    pub(crate) column_name: String,
+    pub(crate) rules: Vec<Filter>,
 }
 
 impl FilterRule {
@@ -28,6 +28,7 @@ impl FilterRule {
     }
 }
 
+#[derive(Clone)]
 pub enum Filter {
     And(Box<Filter>, Box<Filter>),
     Or(Box<Filter>, Box<Filter>),
@@ -130,7 +131,7 @@ fn db_thread(requests: mpsc::Receiver<DbRequest>, responses: mpsc::Sender<DbResp
 }
 
 pub fn get_row_count() -> usize {
-    let mut conn = Connection::open("threaded_batched.db").unwrap();
+    let conn = Connection::open("threaded_batched.db").unwrap();
     conn.query_row("SELECT count(*) FROM row", [], |row| row.get(0))
         .unwrap()
 }
