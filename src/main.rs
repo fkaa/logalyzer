@@ -16,6 +16,7 @@ use ratatui::Terminal;
 mod db;
 mod parse;
 mod ui;
+mod logalang;
 
 const BATCH_SIZE: usize = 64;
 

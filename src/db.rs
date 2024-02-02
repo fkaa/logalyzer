@@ -1,10 +1,66 @@
 use std::sync::mpsc;
-use std::thread;
 use std::time::Instant;
+use std::{string, thread};
 
 use rusqlite::{params, Connection, ToSql};
 
 use crate::parse::LogRow;
+
+pub struct FilterRule {
+    column_name: String,
+    rules: Vec<Filter>,
+}
+
+impl FilterRule {
+    fn get_sql(&self) -> String {
+        if self.rules.is_empty() {
+            return String::new();
+        }
+
+        format!(
+            "WHERE {}",
+            self.rules
+                .iter()
+                .map(|r| r.get_sql(&self.column_name))
+                .collect::<Vec<_>>()
+                .join(" AND ")
+        )
+    }
+}
+
+enum Filter {
+    And(Box<Filter>, Box<Filter>),
+    Or(Box<Filter>, Box<Filter>),
+    Not(Box<Filter>),
+    ContainsString(String),
+}
+
+impl Filter {
+    fn get_sql(&self, column_name: &str) -> String {
+        match self {
+            Filter::And(left, right) => {
+                format!(
+                    "{} AND {}",
+                    left.get_sql(column_name),
+                    right.get_sql(column_name)
+                )
+            }
+            Filter::Or(left, right) => {
+                format!(
+                    "{} OR {}",
+                    left.get_sql(column_name),
+                    right.get_sql(column_name)
+                )
+            }
+            Filter::Not(other_filter) => {
+                format!("NOT ({})", other_filter.get_sql(column_name))
+            }
+            Filter::ContainsString(pat) => {
+                format!("{column_name} LIKE '%{}%'", sanitize_filter(pat))
+            }
+        }
+    }
+}
 
 pub struct DbResponse {
     pub id: u32,
@@ -199,6 +255,82 @@ pub fn consumer(recv: mpsc::Receiver<Vec<LogRow>>, batch_size: usize) {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn filter_get_sql_contains() {
+        let filter = Filter::ContainsString("blabla".into());
+
+        assert_eq!(filter.get_sql("message"), "message LIKE '%blabla%'");
+    }
+
+    #[test]
+    fn filter_get_sql_not() {
+        let filter = Filter::Not(Box::new(Filter::ContainsString("blabla".into())));
+
+        assert_eq!(filter.get_sql("message"), "NOT (message LIKE '%blabla%')");
+    }
+
+    #[test]
+    fn filter_get_sql_and() {
+        let filter = Filter::And(
+            Box::new(Filter::ContainsString("lhs".into())),
+            Box::new(Filter::ContainsString("rhs".into())),
+        );
+
+        assert_eq!(
+            filter.get_sql("message"),
+            "message LIKE '%lhs%' AND message LIKE '%rhs%'"
+        );
+    }
+
+    #[test]
+    fn filter_get_sql_or() {
+        let filter = Filter::Or(
+            Box::new(Filter::ContainsString("lhs".into())),
+            Box::new(Filter::ContainsString("rhs".into())),
+        );
+
+        assert_eq!(
+            filter.get_sql("message"),
+            "message LIKE '%lhs%' OR message LIKE '%rhs%'"
+        );
+    }
+
+    #[test]
+    fn filter_rule_get_sql_none() {
+        let filter = FilterRule {
+            column_name: "message".to_string(),
+            rules: vec![],
+        };
+
+        assert_eq!(filter.get_sql(), "");
+    }
+
+    #[test]
+    fn filter_rule_get_sql_single() {
+        let filter = FilterRule {
+            column_name: "message".to_string(),
+            rules: vec![Filter::ContainsString("bla".to_string())],
+        };
+
+        assert_eq!(filter.get_sql(), "WHERE message LIKE '%bla%'");
+    }
+
+    #[test]
+    fn filter_rule_get_sql_multiple() {
+        let filter = FilterRule {
+            column_name: "message".to_string(),
+            rules: vec![
+                Filter::ContainsString("bla1".to_string()),
+                Filter::ContainsString("bla2".to_string()),
+            ],
+        };
+
+        assert_eq!(
+            filter.get_sql(),
+            "WHERE message LIKE '%bla1%' AND message LIKE '%bla2%'"
+        );
+    }
 
     #[test]
     fn sanitize_input() {

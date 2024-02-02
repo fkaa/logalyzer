@@ -1,0 +1,23 @@
+string = ${ "\"" ~ inner ~ "\"" }
+inner = @{ char* }
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+
+operation = _{ and | or | not }
+    and = { "&&" }
+    or = { "||" }
+    not = { "!" }
+
+column_name = { ASCII_ALPHANUMERIC+ }
+
+filter = { column_name ~ "=" ~ expr }
+
+expr = { term ~ (operation ~ term)* }
+term = _{ not{0,1} ~ (string | "(" ~ expr ~ ")") }
+
+calculation = _{ SOI ~ filter ~ EOI }
+
+WHITESPACE = _{ " " | "\t" }
