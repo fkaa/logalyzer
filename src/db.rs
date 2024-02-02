@@ -17,6 +17,7 @@ pub struct DbRequest {
     pub id: u32,
     pub offset: usize,
     pub limit: usize,
+    pub filter: Option<String>,
 }
 
 pub struct DbApi {
@@ -37,12 +38,13 @@ impl DbApi {
         }
     }
 
-    pub fn get_rows(&mut self, offset: usize, limit: usize) {
+    pub fn get_rows(&mut self, offset: usize, limit: usize, filter: Option<String>) {
         self.sender
             .send(DbRequest {
                 id: 0,
                 offset,
                 limit,
+                filter,
             })
             .unwrap();
     }
@@ -57,7 +59,7 @@ fn db_thread(requests: mpsc::Receiver<DbRequest>, responses: mpsc::Sender<DbResp
         let mut conn = Connection::open("threaded_batched.db").unwrap();
 
         while let Ok(req) = requests.recv() {
-            let rows = get_rows(&mut conn, req.limit, req.offset);
+            let rows = get_rows(&mut conn, req.limit, req.offset, req.filter);
 
             responses
                 .send(DbResponse {
@@ -89,10 +91,24 @@ pub struct DbLogRow {
     pub message: String,
 }
 
-pub fn get_rows(conn: &mut Connection, limit: usize, offset: usize) -> Vec<DbLogRow> {
-    let mut stmt = conn
-        .prepare("SELECT id, time, level, context, thread, file, method, object, message FROM row LIMIT ?1 OFFSET ?2")
-        .unwrap();
+pub fn get_rows(
+    conn: &mut Connection,
+    limit: usize,
+    offset: usize,
+    filter: Option<String>,
+) -> Vec<DbLogRow> {
+    let mut sql = String::new();
+    sql += "SELECT id, time, level, context, thread, file, method, object, message \
+        FROM row ";
+
+    if let Some(filter) = filter {
+        let sanitized_filter = sanitize_filter(&filter);
+        sql += &format!("WHERE message LIKE '%{sanitized_filter}%' ");
+    }
+
+    sql += "LIMIT ?1 OFFSET ?2";
+
+    let mut stmt = conn.prepare(&sql).unwrap();
 
     let data = stmt
         .query_map(params![limit, offset], |row| {
@@ -113,6 +129,10 @@ pub fn get_rows(conn: &mut Connection, limit: usize, offset: usize) -> Vec<DbLog
         .unwrap();
 
     data
+}
+
+fn sanitize_filter(filter: &str) -> String {
+    filter.replace("'", "''")
 }
 
 pub fn consumer(recv: mpsc::Receiver<Vec<LogRow>>, batch_size: usize) {
@@ -174,4 +194,18 @@ pub fn consumer(recv: mpsc::Receiver<Vec<LogRow>>, batch_size: usize) {
     }
     conn.commit().unwrap();
     println!("Inserting took {:.2?}", now.elapsed());
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn sanitize_input() {
+        let sql = "';DROP TABLE *;'";
+
+        let sanitized = sanitize_filter(sql);
+
+        assert_eq!(sanitized, "'';DROP TABLE *;''");
+    }
 }

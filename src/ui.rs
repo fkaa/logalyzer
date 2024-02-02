@@ -2,7 +2,7 @@ use std::io;
 use std::time::Duration;
 
 use crossterm::event;
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{prelude::*, widgets::*};
 
 use crate::db::{DbApi, DbLogRow};
@@ -18,6 +18,11 @@ pub struct LogRows {
     rows: Vec<DbLogRow>,
 }
 
+enum Mode {
+    Normal,
+    Filter,
+}
+
 pub struct AppState {
     db: DbApi,
     table_state: TableState,
@@ -25,11 +30,15 @@ pub struct AppState {
     should_quit: bool,
     loading: bool,
     rows: LogRows,
+    mode: Mode,
+
+    filter: String,
+    cursor_position: usize,
 }
 
 impl AppState {
     pub fn new(mut db: DbApi, total_rows: usize) -> Self {
-        db.get_rows(0, 1000);
+        db.get_rows(0, 1000, None);
 
         AppState {
             db,
@@ -38,6 +47,9 @@ impl AppState {
             should_quit: false,
             loading: false,
             rows: Default::default(),
+            mode: Mode::Normal,
+            filter: String::new(),
+            cursor_position: 0,
         }
     }
 
@@ -76,17 +88,19 @@ impl AppState {
             .highlight_symbol(">>");
 
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalLeft);
+        let line = Paragraph::new(Line::raw(&self.filter));
 
         let area = frame.size();
 
-        frame.render_stateful_widget(
-            table,
-            area.inner(&Margin {
-                vertical: 0,
-                horizontal: 2,
-            }),
-            &mut self.table_state,
-        );
+        let layout = Layout::new(
+            Direction::Vertical,
+            vec![Constraint::Percentage(100), Constraint::Min(1)],
+        )
+        .split(area);
+
+        frame.render_stateful_widget(table, layout[0], &mut self.table_state);
+        frame.render_widget(line, layout[1]);
+
         frame.render_stateful_widget(
             scrollbar,
             area.inner(&Margin {
@@ -107,21 +121,57 @@ impl AppState {
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == event::KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') => self.should_quit = true,
-                        KeyCode::Char('j') => {
-                            self.move_selection(1);
+                    match self.mode {
+                        Mode::Normal => {
+                            self.handle_normal_input(key);
                         }
-                        KeyCode::Char('k') => {
-                            self.move_selection(-1);
+                        Mode::Filter => {
+                            self.handle_filter_input(key);
                         }
-                        _ => {}
                     }
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn handle_filter_input(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => self.apply_filter(),
+            KeyCode::Char(to_insert) => {
+                self.enter_char(to_insert);
+            }
+            KeyCode::Backspace => {
+                self.delete_char();
+            }
+            KeyCode::Left => {
+                self.move_cursor_left();
+            }
+            KeyCode::Right => {
+                self.move_cursor_right();
+            }
+            KeyCode::Esc => {
+                self.mode = Mode::Normal;
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_normal_input(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('f') => {
+                self.mode = Mode::Filter;
+            }
+            KeyCode::Char('q') => self.should_quit = true,
+            KeyCode::Char('j') => {
+                self.move_selection(1);
+            }
+            KeyCode::Char('k') => {
+                self.move_selection(-1);
+            }
+            _ => {}
+        }
     }
 
     pub fn move_selection(&mut self, delta: isize) {
@@ -143,13 +193,29 @@ impl AppState {
         }
 
         if selection < 50 && self.rows.offset >= 50 {
-            self.db.get_rows(self.rows.offset - 100, 300);
+            self.db.get_rows(
+                self.rows.offset - 100,
+                300,
+                if self.filter.is_empty() {
+                    None
+                } else {
+                    Some(self.filter.clone())
+                },
+            );
             self.table_state.select(Some(selection + 100));
             *self.table_state.offset_mut() += 100;
         }
 
         if selection > 200 {
-            self.db.get_rows(self.rows.offset + 100, 300);
+            self.db.get_rows(
+                self.rows.offset + 100,
+                300,
+                if self.filter.is_empty() {
+                    None
+                } else {
+                    Some(self.filter.clone())
+                },
+            );
             self.table_state.select(Some(selection - 99));
             *self.table_state.offset_mut() -= 100;
         }
@@ -157,6 +223,61 @@ impl AppState {
 
     pub fn should_quit(&self) -> bool {
         self.should_quit
+    }
+
+    fn move_cursor_left(&mut self) {
+        let cursor_moved_left = self.cursor_position.saturating_sub(1);
+        self.cursor_position = self.clamp_cursor(cursor_moved_left);
+    }
+
+    fn move_cursor_right(&mut self) {
+        let cursor_moved_right = self.cursor_position.saturating_add(1);
+        self.cursor_position = self.clamp_cursor(cursor_moved_right);
+    }
+
+    fn enter_char(&mut self, new_char: char) {
+        self.filter.insert(self.cursor_position, new_char);
+
+        self.move_cursor_right();
+    }
+
+    fn delete_char(&mut self) {
+        let is_not_cursor_leftmost = self.cursor_position != 0;
+        if is_not_cursor_leftmost {
+            // Method "remove" is not used on the saved text for deleting the selected char.
+            // Reason: Using remove on String works on bytes instead of the chars.
+            // Using remove would require special care because of char boundaries.
+
+            let current_index = self.cursor_position;
+            let from_left_to_current_index = current_index - 1;
+
+            // Getting all characters before the selected character.
+            let before_char_to_delete = self.filter.chars().take(from_left_to_current_index);
+            // Getting all characters after selected character.
+            let after_char_to_delete = self.filter.chars().skip(current_index);
+
+            // Put all characters together except the selected one.
+            // By leaving the selected one out, it is forgotten and therefore deleted.
+            self.filter = before_char_to_delete.chain(after_char_to_delete).collect();
+            self.move_cursor_left();
+        }
+    }
+
+    fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
+        new_cursor_pos.clamp(0, self.filter.len())
+    }
+
+    fn reset_cursor(&mut self) {
+        self.cursor_position = 0;
+    }
+
+    fn apply_filter(&mut self) {
+        self.db.get_rows(0, 300, Some(self.filter.clone()));
+        self.loading = true;
+        *self.table_state.offset_mut() = 0;
+        self.table_state.select(Some(0));
+
+        self.mode = Mode::Normal;
     }
 }
 

@@ -145,17 +145,20 @@ pub fn producer(send: mpsc::SyncSender<Vec<LogRow>>, path: &str, batch_size: usi
 
     let now = Instant::now();
     let mut i = 0;
+
     for line in reader.lines() {
         let line = line.unwrap();
 
-        let row = parse_line(line).unwrap();
-        batch.push(row);
+        if let Some(row) = parse_line(line) {
+            batch.push(row);
 
-        if batch.len() >= batch_size {
-            let old_vec = std::mem::replace(&mut batch, Vec::new());
-            send.send(old_vec).unwrap();
+            if batch.len() >= batch_size {
+                let old_vec = std::mem::replace(&mut batch, Vec::new());
+                send.send(old_vec).unwrap();
+            }
+
+            i += 1;
         }
-        i += 1;
     }
 
     println!("Reading {i} lines took {:.2?}", now.elapsed());
@@ -180,7 +183,7 @@ mod test {
         assert_eq!(line.thread(), "  24");
         assert_eq!(
             line.file(),
-            "CA.Core\\WebProxy\\TcpConnection\\TcpConnection.cs(73)"
+            "TcpConnection.cs(73)"
         );
         assert_eq!(line.method(), "Open");
         assert_eq!(line.object(), "");
