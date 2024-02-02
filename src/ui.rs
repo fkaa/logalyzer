@@ -19,6 +19,77 @@ pub struct LogRows {
 enum Mode {
     Normal,
     Filter,
+    Columns,
+}
+
+pub struct ColumnSetting {
+    index: usize,
+    name: String,
+    visible: bool,
+    width: Constraint,
+}
+
+pub struct ColumnList {
+    state: ListState,
+    items: Vec<ColumnSetting>,
+}
+
+impl ColumnList {
+    fn new(items: Vec<ColumnSetting>) -> Self {
+        ColumnList {
+            state: ListState::default(),
+            items,
+        }
+    }
+
+    fn to_list_items(&self) -> Vec<ListItem<'static>> {
+        self.items
+            .iter()
+            .map(|c| {
+                let line = if c.visible {
+                    Line::from(format!("SHOW {}", c.name))
+                } else {
+                    Line::from(format!("HIDE {}", c.name))
+                };
+
+                ListItem::new(line)
+            })
+            .collect()
+    }
+
+    fn toggle(&mut self) {
+        if let Some(idx) = self.state.selected() {
+            self.items[idx].visible = !self.items[idx].visible;
+        }
+    }
+
+    fn next(&mut self) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i >= self.items.len() - 1 {
+                    0
+                } else {
+                    i + 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+    }
+
+    fn previous(&mut self) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    self.items.len() - 1
+                } else {
+                    i - 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+    }
 }
 
 pub struct AppState {
@@ -30,6 +101,9 @@ pub struct AppState {
     rows: LogRows,
     mode: Mode,
     filter_text_area: TextArea<'static>,
+
+    // columns
+    columns: ColumnList,
 }
 
 impl AppState {
@@ -44,35 +118,95 @@ impl AppState {
             rows: Default::default(),
             mode: Mode::Normal,
             filter_text_area: TextArea::default(),
+            columns: ColumnList::new(vec![
+                ColumnSetting {
+                    index: 0,
+                    name: "Id".into(),
+                    visible: true,
+                    width: Constraint::Length(4),
+                },
+                ColumnSetting {
+                    index: 1,
+                    name: "Time".into(),
+                    visible: true,
+                    width: Constraint::Length(23),
+                },
+                ColumnSetting {
+                    index: 2,
+                    name: "Level".into(),
+                    visible: true,
+                    width: Constraint::Length(5),
+                },
+                ColumnSetting {
+                    index: 3,
+                    name: "Context".into(),
+                    visible: true,
+                    width: Constraint::Length(10),
+                },
+                ColumnSetting {
+                    index: 4,
+                    name: "Thread".into(),
+                    visible: true,
+                    width: Constraint::Length(5),
+                },
+                ColumnSetting {
+                    index: 5,
+                    name: "File".into(),
+                    visible: true,
+                    width: Constraint::Length(30),
+                },
+                ColumnSetting {
+                    index: 6,
+                    name: "Method".into(),
+                    visible: true,
+                    width: Constraint::Length(10),
+                },
+                ColumnSetting {
+                    index: 7,
+                    name: "Object".into(),
+                    visible: true,
+                    width: Constraint::Length(5),
+                },
+                ColumnSetting {
+                    index: 8,
+                    name: "Message".into(),
+                    visible: true,
+                    width: Constraint::Percentage(100),
+                },
+            ]),
         }
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
-        let widths = [
-            Constraint::Length(4),
-            Constraint::Length(23),
-            Constraint::Length(5),
-            Constraint::Length(10),
-            Constraint::Length(5),
-            Constraint::Length(30),
-            Constraint::Length(10),
-            Constraint::Length(5),
-            Constraint::Percentage(100),
-        ];
+        let widths = self
+            .columns
+            .items
+            .iter()
+            .filter_map(|c| if c.visible { Some(c.width) } else { None })
+            .collect::<Vec<_>>();
 
         let rows = self
             .rows
             .rows
             .iter()
-            .map(db_row_to_ui_row)
+            .map(|r| db_row_to_ui_row(r, &self.columns.items))
             .collect::<Vec<_>>();
 
         let table = Table::new(rows, widths)
             .header(
-                Row::new(vec![
-                    "Id", "Time", "Level", "Context", "Thread", "File", "Method", "Object",
-                    "Message",
-                ])
+                Row::new(
+                    self.columns
+                        .items
+                        .iter()
+                        .filter_map(|c| {
+                            if c.visible {
+                                Some(c.name.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                )
                 .style(Style::new().bold())
                 // To add space between the header and the rest of the rows, specify the margin
                 .bottom_margin(1),
@@ -127,6 +261,34 @@ impl AppState {
             frame.render_widget(Clear, area); //this clears out the background
             frame.render_widget(self.filter_text_area.widget(), area);
         }
+
+        if let Mode::Columns = self.mode {
+            let area = centered_rect(60, 60, area);
+
+            let outer_block = Block::default()
+                .borders(Borders::ALL)
+                //                .fg(TEXT_COLOR)
+                //                .bg(TODO_HEADER_BG)
+                .title("Columns")
+                .title_alignment(Alignment::Center);
+
+            let inner_area = outer_block.inner(area);
+
+            let items = self.columns.to_list_items();
+
+            let items = List::new(items)
+                .block(outer_block)
+                .highlight_style(
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .add_modifier(Modifier::REVERSED),
+                )
+                .highlight_symbol(">")
+                .highlight_spacing(HighlightSpacing::Always);
+
+            frame.render_widget(Clear, area);
+            frame.render_stateful_widget(items, area, &mut self.columns.state);
+        }
     }
 
     pub fn handle_events(&mut self) -> io::Result<()> {
@@ -156,10 +318,35 @@ impl AppState {
 
                     self.filter_text_area.input(event);
                 }
+                Mode::Columns => {
+                    self.handle_column_input(&event);
+                }
             }
         }
 
         Ok(())
+    }
+
+    fn handle_column_input(&mut self, event: &Event) {
+        if let Event::Key(key) = event {
+            if key.kind == event::KeyEventKind::Press {
+                match key.code {
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        self.columns.next();
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        self.columns.previous();
+                    }
+                    KeyCode::Char(' ') => {
+                        self.columns.toggle();
+                    }
+                    KeyCode::Esc | KeyCode::Char('c') => {
+                        self.mode = Mode::Normal;
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     fn handle_filter_input(&mut self, key: &KeyEvent) {
@@ -180,6 +367,9 @@ impl AppState {
         match key.code {
             KeyCode::Char('f') => {
                 self.mode = Mode::Filter;
+            }
+            KeyCode::Char('c') => {
+                self.mode = Mode::Columns;
             }
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('j') => {
@@ -250,20 +440,32 @@ impl AppState {
     }
 }
 
-fn db_row_to_ui_row(row: &DbLogRow) -> Row {
+fn db_row_to_ui_row<'a, 'b>(row: &'a DbLogRow, settings: &'b [ColumnSetting]) -> Row<'a> {
     let time = chrono::DateTime::UNIX_EPOCH + chrono::Duration::milliseconds(row.time);
 
-    Row::new([
-        Cell::new(format!("{}", row.id)),
-        Cell::new(format!("{}", time.format("%y-%m-%d %T%.3f"))),
-        level_to_cell(row.level),
-        Cell::new(row.context.clone()),
-        Cell::new(row.thread.clone()),
-        Cell::new(Line::from(row.file.as_str()).alignment(Alignment::Right)),
-        Cell::new(row.method.clone()),
-        Cell::new(row.object.clone()),
-        Cell::new(row.message.clone()),
-    ])
+    let mut cells = Vec::new();
+    for setting in settings {
+        if !setting.visible {
+            continue;
+        }
+
+        let cell = match setting.index {
+            0 => Cell::new(format!("{}", row.id)),
+            1 => Cell::new(format!("{}", time.format("%y-%m-%d %T%.3f"))),
+            2 => level_to_cell(row.level),
+            3 => Cell::new(row.context.clone()),
+            4 => Cell::new(row.thread.clone()),
+            5 => Cell::new(Line::from(row.file.as_str()).alignment(Alignment::Right)),
+            6 => Cell::new(row.method.clone()),
+            7 => Cell::new(row.object.clone()),
+            8 => Cell::new(row.message.clone()),
+            _ => unreachable!(),
+        };
+
+        cells.push(cell);
+    }
+
+    Row::new(cells)
 }
 
 fn level_to_cell(level: i8) -> Cell<'static> {
