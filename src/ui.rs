@@ -4,6 +4,7 @@ use std::time::Duration;
 use crossterm::event;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{prelude::*, widgets::*};
+use tui_logger::{TuiLoggerLevelOutput, TuiLoggerWidget};
 use tui_textarea::TextArea;
 
 use crate::db::{DbApi, DbLogRow};
@@ -86,16 +87,31 @@ impl AppState {
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
             .highlight_symbol(">>");
 
+        let tui_w: TuiLoggerWidget = TuiLoggerWidget::default()
+            .block(
+                Block::default()
+                    .title("stdout")
+                    .border_style(Style::default().fg(Color::White).bg(Color::Black))
+                    .borders(Borders::ALL),
+            )
+            .output_separator('|')
+            .output_timestamp(Some("%F %H:%M:%S%.3f".to_string()))
+            .output_level(Some(TuiLoggerLevelOutput::Long))
+            .output_target(false)
+            .output_file(false)
+            .output_line(false)
+            .style(Style::default().fg(Color::White).bg(Color::Black));
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalLeft);
         let area = frame.size();
 
         let layout = Layout::new(
             Direction::Vertical,
-            vec![Constraint::Percentage(100), Constraint::Min(1)],
+            vec![Constraint::Percentage(100), Constraint::Min(15)],
         )
         .split(area);
 
         frame.render_stateful_widget(table, layout[0], &mut self.table_state);
+        frame.render_widget(tui_w, layout[1]);
 
         frame.render_stateful_widget(
             scrollbar,
@@ -107,7 +123,11 @@ impl AppState {
         );
 
         if let Mode::Filter = self.mode {
-            self.filter_text_area.set_block(Block::default().title("Edit filter(s)").borders(Borders::ALL));
+            self.filter_text_area.set_block(
+                Block::default()
+                    .title("Edit filter(s)")
+                    .borders(Borders::ALL),
+            );
 
             let area = centered_rect(60, 60, area);
             frame.render_widget(Clear, area); //this clears out the background
@@ -150,6 +170,10 @@ impl AppState {
 
     fn handle_filter_input(&mut self, key: &KeyEvent) {
         match key.code {
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.apply_filter();
+                self.mode = Mode::Normal;
+            }
             KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.apply_filter();
                 self.mode = Mode::Normal;
@@ -196,10 +220,24 @@ impl AppState {
             self.db.get_rows(
                 self.rows.offset - 100,
                 300,
-                if self.filter_text_area.lines().first().unwrap().to_string().is_empty() {
+                if self
+                    .filter_text_area
+                    .lines()
+                    .first()
+                    .unwrap()
+                    .to_string()
+                    .is_empty()
+                {
                     None
                 } else {
-                    Some(self.filter_text_area.lines().first().unwrap().to_string().clone())
+                    Some(
+                        self.filter_text_area
+                            .lines()
+                            .first()
+                            .unwrap()
+                            .to_string()
+                            .clone(),
+                    )
                 },
             );
             self.table_state.select(Some(selection + 100));
@@ -210,10 +248,24 @@ impl AppState {
             self.db.get_rows(
                 self.rows.offset + 100,
                 300,
-                if self.filter_text_area.lines().first().unwrap().to_string().is_empty() {
+                if self
+                    .filter_text_area
+                    .lines()
+                    .first()
+                    .unwrap()
+                    .to_string()
+                    .is_empty()
+                {
                     None
                 } else {
-                    Some(self.filter_text_area.lines().first().unwrap().to_string().clone())
+                    Some(
+                        self.filter_text_area
+                            .lines()
+                            .first()
+                            .unwrap()
+                            .to_string()
+                            .clone(),
+                    )
                 },
             );
             self.table_state.select(Some(selection - 99));
@@ -226,7 +278,11 @@ impl AppState {
     }
 
     fn apply_filter(&mut self) {
-        self.db.get_rows(0, 300, Some(self.filter_text_area.lines().first().unwrap().to_string()));
+        self.db.get_rows(
+            0,
+            300,
+            Some(self.filter_text_area.lines().first().unwrap().to_string()),
+        );
         self.loading = true;
         *self.table_state.offset_mut() = 0;
         self.table_state.select(Some(0));
@@ -286,3 +342,49 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     )
     .split(popup_layout[1])[1]
 }
+
+/* TODO: stuff for syntax highlighting
+use crate::logalang::{LogalangParser, Rule};
+use pest::{Parser, Token};
+use std::collections::HashMap;
+
+fn try_parse(lines: &[String]) -> Vec<Vec<(usize, usize, Style)>> {
+    let mut line_tokens = Vec::new();
+
+    for line in lines {
+        let result = LogalangParser::parse(Rule::filter, line);
+
+        let mut styles = HashMap::new();
+        styles.insert(Rule::expr, Style::new().fg(Color::LightGreen));
+        styles.insert(Rule::column_name, Style::new().fg(Color::Yellow));
+        styles.insert(Rule::and, Style::new().fg(Color::LightCyan));
+        styles.insert(Rule::or, Style::new().fg(Color::LightCyan));
+        styles.insert(Rule::not, Style::new().fg(Color::LightCyan));
+
+        let mut spans = Vec::new();
+
+        let mut state = HashMap::new();
+        if let Ok(result) = result {
+            for token in result.tokens() {
+                log::debug!("token: {:?}", token);
+                match token {
+                    Token::Start { rule, pos } => {
+                        state.insert(rule, pos);
+                    }
+                    Token::End { rule, pos } => {
+                        if let Some(start) = state.remove(&rule) {
+                            if let Some(style) = styles.get(&rule) {
+                                spans.push((start.pos(), pos.pos(), style.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+            line_tokens.push(spans);
+        } else {
+            line_tokens.push(vec![]);
+        }
+    }
+
+    line_tokens
+}*/

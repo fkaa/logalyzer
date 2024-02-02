@@ -13,14 +13,17 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 mod db;
-mod parse;
-mod ui;
 mod logalang;
 mod logalang_converter;
+mod parse;
+mod ui;
 
 const BATCH_SIZE: usize = 64;
 
 fn main() -> io::Result<()> {
+    tui_logger::init_logger(log::LevelFilter::Trace).unwrap();
+    tui_logger::set_default_level(log::LevelFilter::Trace);
+
     let now = Instant::now();
     if let Err(e) = std::fs::remove_file("threaded_batched.db") {
         eprintln!("{e}");
