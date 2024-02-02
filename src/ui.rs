@@ -4,6 +4,7 @@ use std::time::Duration;
 use crossterm::event;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{prelude::*, widgets::*};
+use tui_textarea::TextArea;
 
 use crate::db::{DbApi, DbLogRow};
 
@@ -31,15 +32,13 @@ pub struct AppState {
     loading: bool,
     rows: LogRows,
     mode: Mode,
-
-    filter: String,
+    filter_text_area: TextArea<'static>,
     cursor_position: usize,
 }
 
 impl AppState {
     pub fn new(mut db: DbApi, total_rows: usize) -> Self {
         db.get_rows(0, 1000, None);
-
         AppState {
             db,
             table_state: TableState::new().with_selected(Some(1)),
@@ -48,7 +47,7 @@ impl AppState {
             loading: false,
             rows: Default::default(),
             mode: Mode::Normal,
-            filter: String::new(),
+            filter_text_area: TextArea::default(),
             cursor_position: 0,
         }
     }
@@ -88,8 +87,6 @@ impl AppState {
             .highlight_symbol(">>");
 
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalLeft);
-        let line = Paragraph::new(Line::raw(&self.filter));
-
         let area = frame.size();
 
         let layout = Layout::new(
@@ -99,7 +96,6 @@ impl AppState {
         .split(area);
 
         frame.render_stateful_widget(table, layout[0], &mut self.table_state);
-        frame.render_widget(line, layout[1]);
 
         frame.render_stateful_widget(
             scrollbar,
@@ -109,6 +105,14 @@ impl AppState {
             }), // using a inner vertical margin of 1 unit makes the scrollbar inside the block
             &mut self.scrollbar_state,
         );
+
+        if let Mode::Filter = self.mode {
+            let block = Block::default().title("Edit filter").borders(Borders::ALL);
+
+            let area = centered_rect(60, 60, area);
+            frame.render_widget(Clear, area); //this clears out the background
+            frame.render_widget(self.filter_text_area.widget(), area);
+        }
     }
 
     pub fn handle_events(&mut self) -> io::Result<()> {
@@ -119,16 +123,24 @@ impl AppState {
         }
 
         if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == event::KeyEventKind::Press {
-                    match self.mode {
-                        Mode::Normal => {
+            let event = event::read()?;
+
+            match self.mode {
+                Mode::Normal => {
+                    if let Event::Key(key) = &event {
+                        if key.kind == event::KeyEventKind::Press {
                             self.handle_normal_input(key);
                         }
-                        Mode::Filter => {
+                    }
+                }
+                Mode::Filter => {
+                    if let Event::Key(key) = &event {
+                        if key.kind == event::KeyEventKind::Press {
                             self.handle_filter_input(key);
                         }
                     }
+
+                    self.filter_text_area.input(event);
                 }
             }
         }
@@ -136,29 +148,17 @@ impl AppState {
         Ok(())
     }
 
-    fn handle_filter_input(&mut self, key: KeyEvent) {
+    fn handle_filter_input(&mut self, key: &KeyEvent) {
         match key.code {
-            KeyCode::Enter => self.apply_filter(),
-            KeyCode::Char(to_insert) => {
-                self.enter_char(to_insert);
-            }
-            KeyCode::Backspace => {
-                self.delete_char();
-            }
-            KeyCode::Left => {
-                self.move_cursor_left();
-            }
-            KeyCode::Right => {
-                self.move_cursor_right();
-            }
-            KeyCode::Esc => {
+            KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.apply_filter();
                 self.mode = Mode::Normal;
             }
             _ => {}
         }
     }
 
-    fn handle_normal_input(&mut self, key: KeyEvent) {
+    fn handle_normal_input(&mut self, key: &KeyEvent) {
         match key.code {
             KeyCode::Char('f') => {
                 self.mode = Mode::Filter;
@@ -196,10 +196,10 @@ impl AppState {
             self.db.get_rows(
                 self.rows.offset - 100,
                 300,
-                if self.filter.is_empty() {
+                if self.filter_text_area.lines().first().unwrap().to_string().is_empty() {
                     None
                 } else {
-                    Some(self.filter.clone())
+                    Some(self.filter_text_area.lines().first().unwrap().to_string().clone())
                 },
             );
             self.table_state.select(Some(selection + 100));
@@ -210,10 +210,10 @@ impl AppState {
             self.db.get_rows(
                 self.rows.offset + 100,
                 300,
-                if self.filter.is_empty() {
+                if self.filter_text_area.lines().first().unwrap().to_string().is_empty() {
                     None
                 } else {
-                    Some(self.filter.clone())
+                    Some(self.filter_text_area.lines().first().unwrap().to_string().clone())
                 },
             );
             self.table_state.select(Some(selection - 99));
@@ -225,54 +225,8 @@ impl AppState {
         self.should_quit
     }
 
-    fn move_cursor_left(&mut self) {
-        let cursor_moved_left = self.cursor_position.saturating_sub(1);
-        self.cursor_position = self.clamp_cursor(cursor_moved_left);
-    }
-
-    fn move_cursor_right(&mut self) {
-        let cursor_moved_right = self.cursor_position.saturating_add(1);
-        self.cursor_position = self.clamp_cursor(cursor_moved_right);
-    }
-
-    fn enter_char(&mut self, new_char: char) {
-        self.filter.insert(self.cursor_position, new_char);
-
-        self.move_cursor_right();
-    }
-
-    fn delete_char(&mut self) {
-        let is_not_cursor_leftmost = self.cursor_position != 0;
-        if is_not_cursor_leftmost {
-            // Method "remove" is not used on the saved text for deleting the selected char.
-            // Reason: Using remove on String works on bytes instead of the chars.
-            // Using remove would require special care because of char boundaries.
-
-            let current_index = self.cursor_position;
-            let from_left_to_current_index = current_index - 1;
-
-            // Getting all characters before the selected character.
-            let before_char_to_delete = self.filter.chars().take(from_left_to_current_index);
-            // Getting all characters after selected character.
-            let after_char_to_delete = self.filter.chars().skip(current_index);
-
-            // Put all characters together except the selected one.
-            // By leaving the selected one out, it is forgotten and therefore deleted.
-            self.filter = before_char_to_delete.chain(after_char_to_delete).collect();
-            self.move_cursor_left();
-        }
-    }
-
-    fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
-        new_cursor_pos.clamp(0, self.filter.len())
-    }
-
-    fn reset_cursor(&mut self) {
-        self.cursor_position = 0;
-    }
-
     fn apply_filter(&mut self) {
-        self.db.get_rows(0, 300, Some(self.filter.clone()));
+        self.db.get_rows(0, 300, Some(self.filter_text_area.lines().first().unwrap().to_string()));
         self.loading = true;
         *self.table_state.offset_mut() = 0;
         self.table_state.select(Some(0));
@@ -309,4 +263,26 @@ fn level_to_cell(level: i8) -> Cell<'static> {
         crate::parse::FATAL => Cell::new("FATAL").style(Style::new().fg(Color::Red)),
         _ => Cell::new("UNKNWN"),
     }
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::new(
+        Direction::Vertical,
+        [
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ],
+    )
+    .split(r);
+
+    Layout::new(
+        Direction::Horizontal,
+        [
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ],
+    )
+    .split(popup_layout[1])[1]
 }
