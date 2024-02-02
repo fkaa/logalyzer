@@ -14,7 +14,6 @@ use ratatui::Terminal;
 
 mod db;
 mod logalang;
-mod logalang_converter;
 mod parse;
 mod ui;
 

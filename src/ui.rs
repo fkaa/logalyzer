@@ -8,11 +8,7 @@ use tui_logger::{TuiLoggerLevelOutput, TuiLoggerWidget};
 use tui_textarea::TextArea;
 
 use crate::db::{DbApi, DbLogRow};
-
-pub struct LogRowState {
-    total_rows: usize,
-    total_filtered_rows: usize,
-}
+use crate::logalang::FilterRule;
 
 #[derive(Default)]
 pub struct LogRows {
@@ -34,12 +30,11 @@ pub struct AppState {
     rows: LogRows,
     mode: Mode,
     filter_text_area: TextArea<'static>,
-    cursor_position: usize,
 }
 
 impl AppState {
     pub fn new(mut db: DbApi, total_rows: usize) -> Self {
-        db.get_rows(0, 1000, None);
+        db.get_rows(0, 1000, vec![]);
         AppState {
             db,
             table_state: TableState::new().with_selected(Some(1)),
@@ -49,7 +44,6 @@ impl AppState {
             rows: Default::default(),
             mode: Mode::Normal,
             filter_text_area: TextArea::default(),
-            cursor_position: 0,
         }
     }
 
@@ -217,57 +211,15 @@ impl AppState {
         }
 
         if selection < 50 && self.rows.offset >= 50 {
-            self.db.get_rows(
-                self.rows.offset - 100,
-                300,
-                if self
-                    .filter_text_area
-                    .lines()
-                    .first()
-                    .unwrap()
-                    .to_string()
-                    .is_empty()
-                {
-                    None
-                } else {
-                    Some(
-                        self.filter_text_area
-                            .lines()
-                            .first()
-                            .unwrap()
-                            .to_string()
-                            .clone(),
-                    )
-                },
-            );
+            self.db
+                .get_rows(self.rows.offset - 100, 300, self.get_filters());
             self.table_state.select(Some(selection + 100));
             *self.table_state.offset_mut() += 100;
         }
 
         if selection > 200 {
-            self.db.get_rows(
-                self.rows.offset + 100,
-                300,
-                if self
-                    .filter_text_area
-                    .lines()
-                    .first()
-                    .unwrap()
-                    .to_string()
-                    .is_empty()
-                {
-                    None
-                } else {
-                    Some(
-                        self.filter_text_area
-                            .lines()
-                            .first()
-                            .unwrap()
-                            .to_string()
-                            .clone(),
-                    )
-                },
-            );
+            self.db
+                .get_rows(self.rows.offset + 100, 300, self.get_filters());
             self.table_state.select(Some(selection - 99));
             *self.table_state.offset_mut() -= 100;
         }
@@ -278,16 +230,23 @@ impl AppState {
     }
 
     fn apply_filter(&mut self) {
-        self.db.get_rows(
-            0,
-            300,
-            Some(self.filter_text_area.lines().first().unwrap().to_string()),
-        );
+        self.db.get_rows(0, 300, self.get_filters());
         self.loading = true;
         *self.table_state.offset_mut() = 0;
         self.table_state.select(Some(0));
 
         self.mode = Mode::Normal;
+    }
+
+    fn get_filters(&self) -> Vec<FilterRule> {
+        let mut filters = Vec::new();
+        for line in self.filter_text_area.lines() {
+            match crate::logalang::parse_line(line) {
+                Ok(filter) => filters.push(filter),
+                Err(e) => log::warn!("invalid filter: {e}"),
+            }
+        }
+        filters
     }
 }
 

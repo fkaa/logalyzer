@@ -1,67 +1,11 @@
 use std::sync::mpsc;
+use std::thread;
 use std::time::Instant;
-use std::{thread};
 
 use rusqlite::{params, Connection, ToSql};
 
+use crate::logalang::FilterRule;
 use crate::parse::LogRow;
-
-pub struct FilterRule {
-    pub(crate) column_name: String,
-    pub(crate) rules: Vec<Filter>,
-}
-
-impl FilterRule {
-    fn get_sql(&self) -> String {
-        if self.rules.is_empty() {
-            return String::new();
-        }
-
-        format!(
-            "WHERE {}",
-            self.rules
-                .iter()
-                .map(|r| r.get_sql(&self.column_name))
-                .collect::<Vec<_>>()
-                .join(" AND ")
-        )
-    }
-}
-
-#[derive(Clone)]
-pub enum Filter {
-    And(Box<Filter>, Box<Filter>),
-    Or(Box<Filter>, Box<Filter>),
-    Not(Box<Filter>),
-    ContainsString(String),
-}
-
-impl Filter {
-    fn get_sql(&self, column_name: &str) -> String {
-        match self {
-            Filter::And(left, right) => {
-                format!(
-                    "{} AND {}",
-                    left.get_sql(column_name),
-                    right.get_sql(column_name)
-                )
-            }
-            Filter::Or(left, right) => {
-                format!(
-                    "{} OR {}",
-                    left.get_sql(column_name),
-                    right.get_sql(column_name)
-                )
-            }
-            Filter::Not(other_filter) => {
-                format!("NOT ({})", other_filter.get_sql(column_name))
-            }
-            Filter::ContainsString(pat) => {
-                format!("{column_name} LIKE '%{}%'", sanitize_filter(pat))
-            }
-        }
-    }
-}
 
 pub struct DbResponse {
     pub id: u32,
@@ -74,7 +18,7 @@ pub struct DbRequest {
     pub id: u32,
     pub offset: usize,
     pub limit: usize,
-    pub filter: Option<String>,
+    pub filters: Vec<FilterRule>,
 }
 
 pub struct DbApi {
@@ -95,13 +39,13 @@ impl DbApi {
         }
     }
 
-    pub fn get_rows(&mut self, offset: usize, limit: usize, filter: Option<String>) {
+    pub fn get_rows(&mut self, offset: usize, limit: usize, filters: Vec<FilterRule>) {
         self.sender
             .send(DbRequest {
                 id: 0,
                 offset,
                 limit,
-                filter,
+                filters,
             })
             .unwrap();
     }
@@ -116,7 +60,7 @@ fn db_thread(requests: mpsc::Receiver<DbRequest>, responses: mpsc::Sender<DbResp
         let mut conn = Connection::open("threaded_batched.db").unwrap();
 
         while let Ok(req) = requests.recv() {
-            let rows = get_rows(&mut conn, req.limit, req.offset, req.filter);
+            let rows = get_rows(&mut conn, req.limit, req.offset, req.filters);
 
             responses
                 .send(DbResponse {
@@ -152,18 +96,19 @@ pub fn get_rows(
     conn: &mut Connection,
     limit: usize,
     offset: usize,
-    filter: Option<String>,
+    filters: Vec<FilterRule>,
 ) -> Vec<DbLogRow> {
     let mut sql = String::new();
     sql += "SELECT id, time, level, context, thread, file, method, object, message \
         FROM row ";
 
-    if let Some(filter) = filter {
-        let sanitized_filter = sanitize_filter(&filter);
-        sql += &format!("WHERE message LIKE '%{sanitized_filter}%' ");
+    for filter in filters {
+        sql += &filter.get_sql();
     }
 
-    sql += "LIMIT ?1 OFFSET ?2";
+    sql += " LIMIT ?1 OFFSET ?2";
+
+    log::trace!("SQL query: {sql}");
 
     let mut stmt = conn.prepare(&sql).unwrap();
 
@@ -188,7 +133,7 @@ pub fn get_rows(
     data
 }
 
-fn sanitize_filter(filter: &str) -> String {
+pub fn sanitize_filter(filter: &str) -> String {
     filter.replace("'", "''")
 }
 
@@ -256,82 +201,6 @@ pub fn consumer(recv: mpsc::Receiver<Vec<LogRow>>, batch_size: usize) {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn filter_get_sql_contains() {
-        let filter = Filter::ContainsString("blabla".into());
-
-        assert_eq!(filter.get_sql("message"), "message LIKE '%blabla%'");
-    }
-
-    #[test]
-    fn filter_get_sql_not() {
-        let filter = Filter::Not(Box::new(Filter::ContainsString("blabla".into())));
-
-        assert_eq!(filter.get_sql("message"), "NOT (message LIKE '%blabla%')");
-    }
-
-    #[test]
-    fn filter_get_sql_and() {
-        let filter = Filter::And(
-            Box::new(Filter::ContainsString("lhs".into())),
-            Box::new(Filter::ContainsString("rhs".into())),
-        );
-
-        assert_eq!(
-            filter.get_sql("message"),
-            "message LIKE '%lhs%' AND message LIKE '%rhs%'"
-        );
-    }
-
-    #[test]
-    fn filter_get_sql_or() {
-        let filter = Filter::Or(
-            Box::new(Filter::ContainsString("lhs".into())),
-            Box::new(Filter::ContainsString("rhs".into())),
-        );
-
-        assert_eq!(
-            filter.get_sql("message"),
-            "message LIKE '%lhs%' OR message LIKE '%rhs%'"
-        );
-    }
-
-    #[test]
-    fn filter_rule_get_sql_none() {
-        let filter = FilterRule {
-            column_name: "message".to_string(),
-            rules: vec![],
-        };
-
-        assert_eq!(filter.get_sql(), "");
-    }
-
-    #[test]
-    fn filter_rule_get_sql_single() {
-        let filter = FilterRule {
-            column_name: "message".to_string(),
-            rules: vec![Filter::ContainsString("bla".to_string())],
-        };
-
-        assert_eq!(filter.get_sql(), "WHERE message LIKE '%bla%'");
-    }
-
-    #[test]
-    fn filter_rule_get_sql_multiple() {
-        let filter = FilterRule {
-            column_name: "message".to_string(),
-            rules: vec![
-                Filter::ContainsString("bla1".to_string()),
-                Filter::ContainsString("bla2".to_string()),
-            ],
-        };
-
-        assert_eq!(
-            filter.get_sql(),
-            "WHERE message LIKE '%bla1%' AND message LIKE '%bla2%'"
-        );
-    }
 
     #[test]
     fn sanitize_input() {
