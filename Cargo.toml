@@ -16,5 +16,5 @@ pest = "2.6"
 pest_derive = "2.6"
 tui-textarea = "0.4.0"
 log = "0.4.20"
-tui-logger = { version = "0.10.1", features = ["crossterm"] }
+tui-logger = { version = "0.10.1", default-features = false, features = ["crossterm"] }
 assert_matches = "1.5.0"
