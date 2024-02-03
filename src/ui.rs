@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use crossterm::event;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::style::Stylize;
 use ratatui::{prelude::*, widgets::*};
 use tui_logger::{TuiLoggerLevelOutput, TuiLoggerWidget};
 use tui_textarea::TextArea;
@@ -93,6 +94,7 @@ impl ColumnList {
 }
 
 pub struct AppState {
+    file: String,
     db: DbApi,
     table_state: TableState,
     scrollbar_state: ScrollbarState,
@@ -107,9 +109,10 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(mut db: DbApi, total_rows: usize) -> Self {
+    pub fn new(file: String, mut db: DbApi, total_rows: usize) -> Self {
         db.get_rows(0, 1000, vec![]);
         AppState {
+            file,
             db,
             table_state: TableState::new().with_selected(Some(1)),
             scrollbar_state: ScrollbarState::new(total_rows),
@@ -207,11 +210,17 @@ impl AppState {
                         })
                         .collect::<Vec<_>>(),
                 )
-                .style(Style::new().bold())
-                // To add space between the header and the rest of the rows, specify the margin
-                .bottom_margin(1),
+                    .style(Style::new())
+                    // To add space between the header and the rest of the rows, specify the margin
+                    .bottom_margin(1),
             )
-            .block(Block::default().title("Table"))
+            .block(Block::default().title(&*self.file).title_alignment(Alignment::Right).title_style(Style {
+                fg: Option::from(Color::DarkGray),
+                bg: None,
+                underline_color: None,
+                add_modifier: Default::default(),
+                sub_modifier: Default::default(),
+            }))
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
             .highlight_symbol(">>");
 
@@ -230,21 +239,35 @@ impl AppState {
             .output_line(false)
             .style(Style::default().fg(Color::White).bg(Color::Black));
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalLeft);
+
+        let cheat_sheet_style = Style::new()
+            .bg(Color::Blue)
+            .fg(Color::White);
+        let cheat_sheet_items =
+            Line::from(vec![
+                Span::styled("Filter [f]", cheat_sheet_style),
+                Span::raw(" "),
+                Span::styled("Column Visibility [c]", cheat_sheet_style),
+                Span::raw(" "),
+                Span::styled("Quit [q]", cheat_sheet_style)]);
+        let cheat_sheet = Paragraph::new(cheat_sheet_items).alignment(Alignment::Left);
+
         let area = frame.size();
 
         let layout = Layout::new(
             Direction::Vertical,
-            vec![Constraint::Percentage(100), Constraint::Min(15)],
+            vec![Constraint::Percentage(100), Constraint::Min(1), Constraint::Min(15)],
         )
-        .split(area);
+            .split(area);
 
         frame.render_stateful_widget(table, layout[0], &mut self.table_state);
-        frame.render_widget(tui_w, layout[1]);
+        frame.render_widget(cheat_sheet, layout[1]);
+        frame.render_widget(tui_w, layout[2]);
 
         frame.render_stateful_widget(
             scrollbar,
-            area.inner(&Margin {
-                vertical: 1,
+            layout[0].inner(&Margin {
+                vertical: 0,
                 horizontal: 0,
             }), // using a inner vertical margin of 1 unit makes the scrollbar inside the block
             &mut self.scrollbar_state,
@@ -473,7 +496,7 @@ fn level_to_cell(level: i8) -> Cell<'static> {
         crate::parse::TRACE => Cell::new("TRACE").style(Style::new().fg(Color::Gray)),
         crate::parse::INFO => Cell::new("INFO"),
         crate::parse::DEBUG => {
-            Cell::new("DEBUG").style(Style::new().bg(Color::White).fg(Color::Gray))
+            Cell::new("DEBUG").style(Style::new().fg(Color::Gray))
         }
         crate::parse::WARN => Cell::new("WARN").style(Style::new().fg(Color::Yellow)),
         crate::parse::ERROR => Cell::new("ERROR").style(Style::new().fg(Color::Red)),
@@ -491,7 +514,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_y) / 2),
         ],
     )
-    .split(r);
+        .split(r);
 
     Layout::new(
         Direction::Horizontal,
@@ -501,7 +524,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ],
     )
-    .split(popup_layout[1])[1]
+        .split(popup_layout[1])[1]
 }
 
 /* TODO: stuff for syntax highlighting

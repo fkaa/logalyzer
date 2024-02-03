@@ -51,18 +51,18 @@ fn main() -> io::Result<()> {
     if first != "parse" {
         let db = DbApi::new();
 
-        run_ui(db, rows)?;
+        run_ui(file, db, rows)?;
     }
 
     Ok(())
 }
 
-fn run_ui(db: DbApi, rows: usize) -> io::Result<()> {
+fn run_ui(file: &String, db: DbApi, rows: usize) -> io::Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
-    let mut app_state = AppState::new(db, rows);
+    let mut app_state = AppState::new(file.clone(), db, rows);
 
     while !app_state.should_quit() {
         terminal.draw(|f| app_state.draw(f))?;
