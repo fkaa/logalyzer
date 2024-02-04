@@ -1,15 +1,17 @@
+mod cheat_sheet;
+
 use std::io;
 use std::time::Duration;
 
 use crossterm::event;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-use crossterm::style::Stylize;
 use ratatui::{prelude::*, widgets::*};
 use tui_logger::{TuiLoggerLevelOutput, TuiLoggerWidget};
 use tui_textarea::TextArea;
 
 use crate::db::{DbApi, DbLogRow};
 use crate::logalang::FilterRule;
+use crate::ui::cheat_sheet::CheatSheet;
 
 #[derive(Default)]
 pub struct LogRows {
@@ -210,17 +212,22 @@ impl AppState {
                         })
                         .collect::<Vec<_>>(),
                 )
-                    .style(Style::new())
-                    // To add space between the header and the rest of the rows, specify the margin
-                    .bottom_margin(1),
+                .style(Style::new())
+                // To add space between the header and the rest of the rows, specify the margin
+                .bottom_margin(1),
             )
-            .block(Block::default().title(&*self.file).title_alignment(Alignment::Right).title_style(Style {
-                fg: Option::from(Color::DarkGray),
-                bg: None,
-                underline_color: None,
-                add_modifier: Default::default(),
-                sub_modifier: Default::default(),
-            }))
+            .block(
+                Block::default()
+                    .title(&*self.file)
+                    .title_alignment(Alignment::Right)
+                    .title_style(Style {
+                        fg: Option::from(Color::DarkGray),
+                        bg: None,
+                        underline_color: None,
+                        add_modifier: Default::default(),
+                        sub_modifier: Default::default(),
+                    }),
+            )
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
             .highlight_symbol(">>");
 
@@ -240,28 +247,28 @@ impl AppState {
             .style(Style::default().fg(Color::White).bg(Color::Black));
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalLeft);
 
-        let cheat_sheet_style = Style::new()
-            .bg(Color::Blue)
-            .fg(Color::White);
-        let cheat_sheet_items =
-            Line::from(vec![
-                Span::styled("Filter [f]", cheat_sheet_style),
-                Span::raw(" "),
-                Span::styled("Column Visibility [c]", cheat_sheet_style),
-                Span::raw(" "),
-                Span::styled("Quit [q]", cheat_sheet_style)]);
-        let cheat_sheet = Paragraph::new(cheat_sheet_items).alignment(Alignment::Left);
+        let cheat_sheet = CheatSheet {
+            items: vec![
+                "Filter [f]".to_string(),
+                "Column Visibility [c]".to_string(),
+                "Quit [q]".to_string(),
+            ],
+        };
 
         let area = frame.size();
 
         let layout = Layout::new(
             Direction::Vertical,
-            vec![Constraint::Percentage(100), Constraint::Min(1), Constraint::Min(15)],
+            vec![
+                Constraint::Percentage(100),
+                Constraint::Min(1),
+                Constraint::Min(15),
+            ],
         )
-            .split(area);
+        .split(area);
 
         frame.render_stateful_widget(table, layout[0], &mut self.table_state);
-        frame.render_widget(cheat_sheet, layout[1]);
+        frame.render_widget(cheat_sheet.to_widget(), layout[1]);
         frame.render_widget(tui_w, layout[2]);
 
         frame.render_stateful_widget(
@@ -281,12 +288,39 @@ impl AppState {
             );
 
             let area = centered_rect(60, 60, area);
+
+            let layout = Layout::new(
+                Direction::Vertical,
+                vec![Constraint::Percentage(100), Constraint::Min(1)],
+            )
+            .split(area);
+
+            let cheat_sheet = CheatSheet {
+                items: vec![
+                    "Apply Filter [<C-f>]".to_string(),
+                    "Close [Esc]".to_string(),
+                ],
+            };
+
             frame.render_widget(Clear, area); //this clears out the background
-            frame.render_widget(self.filter_text_area.widget(), area);
+            frame.render_widget(self.filter_text_area.widget(), layout[0]);
+            frame.render_widget(cheat_sheet.to_widget(), layout[1]);
         }
 
         if let Mode::Columns = self.mode {
+            let cheat_sheet = CheatSheet {
+                items: vec![
+                    "Toggle Visibility [ ]".to_string(),
+                    "Close [Esc]".to_string(),
+                ],
+            };
+
             let area = centered_rect(60, 60, area);
+            let layout = Layout::new(
+                Direction::Vertical,
+                vec![Constraint::Percentage(100), Constraint::Min(1)],
+            )
+            .split(area);
 
             let outer_block = Block::default()
                 .borders(Borders::ALL)
@@ -294,8 +328,6 @@ impl AppState {
                 //                .bg(TODO_HEADER_BG)
                 .title("Columns")
                 .title_alignment(Alignment::Center);
-
-            let inner_area = outer_block.inner(area);
 
             let items = self.columns.to_list_items();
 
@@ -310,7 +342,8 @@ impl AppState {
                 .highlight_spacing(HighlightSpacing::Always);
 
             frame.render_widget(Clear, area);
-            frame.render_stateful_widget(items, area, &mut self.columns.state);
+            frame.render_stateful_widget(items, layout[0], &mut self.columns.state);
+            frame.render_widget(cheat_sheet.to_widget(), layout[1]);
         }
     }
 
@@ -378,7 +411,7 @@ impl AppState {
                 self.apply_filter();
                 self.mode = Mode::Normal;
             }
-            KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Esc => {
                 self.apply_filter();
                 self.mode = Mode::Normal;
             }
@@ -495,9 +528,7 @@ fn level_to_cell(level: i8) -> Cell<'static> {
     match level {
         crate::parse::TRACE => Cell::new("TRACE").style(Style::new().fg(Color::Gray)),
         crate::parse::INFO => Cell::new("INFO"),
-        crate::parse::DEBUG => {
-            Cell::new("DEBUG").style(Style::new().fg(Color::Gray))
-        }
+        crate::parse::DEBUG => Cell::new("DEBUG").style(Style::new().fg(Color::Gray)),
         crate::parse::WARN => Cell::new("WARN").style(Style::new().fg(Color::Yellow)),
         crate::parse::ERROR => Cell::new("ERROR").style(Style::new().fg(Color::Red)),
         crate::parse::FATAL => Cell::new("FATAL").style(Style::new().fg(Color::Red)),
@@ -514,7 +545,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_y) / 2),
         ],
     )
-        .split(r);
+    .split(r);
 
     Layout::new(
         Direction::Horizontal,
@@ -524,7 +555,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ],
     )
-        .split(popup_layout[1])[1]
+    .split(popup_layout[1])[1]
 }
 
 /* TODO: stuff for syntax highlighting
