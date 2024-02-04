@@ -3,6 +3,7 @@ use crossterm::event::{Event, KeyCode};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::prelude::{Line, Modifier, Style};
+use ratatui::style::Color;
 use ratatui::widgets::{Block, Borders, Clear, HighlightSpacing, List, ListItem, ListState, Row};
 use crate::ui::{centered_rect};
 use crate::ui::cheat_sheet::CheatSheet;
@@ -50,16 +51,21 @@ impl ColumnList {
                     }
                 })
                 .collect::<Vec<_>>(),
-        )    }
+        )
+    }
 
     pub(crate) fn to_list_items(&self) -> Vec<ListItem<'static>> {
         self.items
             .iter()
             .map(|c| {
                 let line = if c.visible {
-                    Line::from(format!("SHOW {}", c.name))
+                    let mut l = Line::from(format!("[x] {}", c.name));
+                    l.patch_style(Style::new().fg(Color::LightGreen));
+                    l
                 } else {
-                    Line::from(format!("HIDE {}", c.name))
+                    let mut l = Line::from(format!("[ ] {}", c.name));
+                    l.patch_style(Style::new().fg(Color::Gray));
+                    l
                 };
 
                 ListItem::new(line)
@@ -135,7 +141,8 @@ impl ColumnList {
 
         frame.render_widget(Clear, area);
         frame.render_stateful_widget(items, layout[0], &mut self.state);
-        frame.render_widget(cheat_sheet.to_widget(), layout[1]);    }
+        frame.render_widget(cheat_sheet.to_widget(), layout[1]);
+    }
 
     fn toggle(&mut self) {
         if let Some(idx) = self.state.selected() {
