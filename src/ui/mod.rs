@@ -1,5 +1,3 @@
-mod cheat_sheet;
-
 use std::io;
 use std::time::Duration;
 
@@ -12,6 +10,10 @@ use tui_textarea::TextArea;
 use crate::db::{DbApi, DbLogRow};
 use crate::logalang::FilterRule;
 use crate::ui::cheat_sheet::CheatSheet;
+use crate::ui::columns::ColumnSetting;
+
+mod cheat_sheet;
+mod columns;
 
 #[derive(Default)]
 pub struct LogRows {
@@ -23,76 +25,6 @@ enum Mode {
     Normal,
     Filter,
     Columns,
-}
-
-pub struct ColumnSetting {
-    index: usize,
-    name: String,
-    visible: bool,
-    width: Constraint,
-}
-
-pub struct ColumnList {
-    state: ListState,
-    items: Vec<ColumnSetting>,
-}
-
-impl ColumnList {
-    fn new(items: Vec<ColumnSetting>) -> Self {
-        ColumnList {
-            state: ListState::default(),
-            items,
-        }
-    }
-
-    fn to_list_items(&self) -> Vec<ListItem<'static>> {
-        self.items
-            .iter()
-            .map(|c| {
-                let line = if c.visible {
-                    Line::from(format!("SHOW {}", c.name))
-                } else {
-                    Line::from(format!("HIDE {}", c.name))
-                };
-
-                ListItem::new(line)
-            })
-            .collect()
-    }
-
-    fn toggle(&mut self) {
-        if let Some(idx) = self.state.selected() {
-            self.items[idx].visible = !self.items[idx].visible;
-        }
-    }
-
-    fn next(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i >= self.items.len() - 1 {
-                    0
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
-
-    fn previous(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.items.len() - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
 }
 
 pub struct AppState {
@@ -108,7 +40,7 @@ pub struct AppState {
     filter_text_area: TextArea<'static>,
 
     // columns
-    columns: ColumnList,
+    columns: columns::ColumnList,
 }
 
 impl AppState {
@@ -125,7 +57,7 @@ impl AppState {
             rows: Default::default(),
             mode: Mode::Normal,
             filter_text_area: TextArea::default(),
-            columns: ColumnList::new(vec![
+            columns: columns::ColumnList::new(vec![
                 ColumnSetting {
                     index: 0,
                     name: "Id".into(),
@@ -186,34 +118,18 @@ impl AppState {
 
     pub fn draw(&mut self, frame: &mut Frame) {
         let widths = self
-            .columns
-            .items
-            .iter()
-            .filter_map(|c| if c.visible { Some(c.width) } else { None })
-            .collect::<Vec<_>>();
+            .columns.to_column_constraints();
 
         let rows = self
             .rows
             .rows
             .iter()
-            .map(|r| db_row_to_ui_row(r, &self.columns.items))
+            .map(|r| db_row_to_ui_row(r, &self.columns.get_settings()))
             .collect::<Vec<_>>();
 
         let table = Table::new(rows, widths)
             .header(
-                Row::new(
-                    self.columns
-                        .items
-                        .iter()
-                        .filter_map(|c| {
-                            if c.visible {
-                                Some(c.name.clone())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>(),
-                )
+                self.columns.get_header_row()
                 .style(Style::new())
                 // To add space between the header and the rest of the rows, specify the margin
                 .bottom_margin(1),
@@ -312,42 +228,7 @@ impl AppState {
         }
 
         if let Mode::Columns = self.mode {
-            let cheat_sheet = CheatSheet {
-                items: vec![
-                    "Toggle Visibility [ ]".to_string(),
-                    "Close [Esc]".to_string(),
-                ],
-            };
-
-            let area = centered_rect(60, 60, area);
-            let layout = Layout::new(
-                Direction::Vertical,
-                vec![Constraint::Percentage(100), Constraint::Min(1)],
-            )
-            .split(area);
-
-            let outer_block = Block::default()
-                .borders(Borders::ALL)
-                //                .fg(TEXT_COLOR)
-                //                .bg(TODO_HEADER_BG)
-                .title("Columns")
-                .title_alignment(Alignment::Center);
-
-            let items = self.columns.to_list_items();
-
-            let items = List::new(items)
-                .block(outer_block)
-                .highlight_style(
-                    Style::default()
-                        .add_modifier(Modifier::BOLD)
-                        .add_modifier(Modifier::REVERSED),
-                )
-                .highlight_symbol(">")
-                .highlight_spacing(HighlightSpacing::Always);
-
-            frame.render_widget(Clear, area);
-            frame.render_stateful_widget(items, layout[0], &mut self.columns.state);
-            frame.render_widget(cheat_sheet.to_widget(), layout[1]);
+            self.columns.render(frame);
         }
     }
 
@@ -388,24 +269,8 @@ impl AppState {
     }
 
     fn handle_column_input(&mut self, event: &Event) {
-        if let Event::Key(key) = event {
-            if key.kind == event::KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Char('j') | KeyCode::Down => {
-                        self.columns.next();
-                    }
-                    KeyCode::Char('k') | KeyCode::Up => {
-                        self.columns.previous();
-                    }
-                    KeyCode::Char(' ') => {
-                        self.columns.toggle();
-                    }
-                    KeyCode::Esc | KeyCode::Char('c') => {
-                        self.mode = Mode::Normal;
-                    }
-                    _ => {}
-                }
-            }
+        if self.columns.input(event) {
+            self.mode = Mode::Normal;
         }
     }
 
@@ -592,49 +457,3 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     )
     .split(popup_layout[1])[1]
 }
-
-/* TODO: stuff for syntax highlighting
-use crate::logalang::{LogalangParser, Rule};
-use pest::{Parser, Token};
-use std::collections::HashMap;
-
-fn try_parse(lines: &[String]) -> Vec<Vec<(usize, usize, Style)>> {
-    let mut line_tokens = Vec::new();
-
-    for line in lines {
-        let result = LogalangParser::parse(Rule::filter, line);
-
-        let mut styles = HashMap::new();
-        styles.insert(Rule::expr, Style::new().fg(Color::LightGreen));
-        styles.insert(Rule::column_name, Style::new().fg(Color::Yellow));
-        styles.insert(Rule::and, Style::new().fg(Color::LightCyan));
-        styles.insert(Rule::or, Style::new().fg(Color::LightCyan));
-        styles.insert(Rule::not, Style::new().fg(Color::LightCyan));
-
-        let mut spans = Vec::new();
-
-        let mut state = HashMap::new();
-        if let Ok(result) = result {
-            for token in result.tokens() {
-                log::debug!("token: {:?}", token);
-                match token {
-                    Token::Start { rule, pos } => {
-                        state.insert(rule, pos);
-                    }
-                    Token::End { rule, pos } => {
-                        if let Some(start) = state.remove(&rule) {
-                            if let Some(style) = styles.get(&rule) {
-                                spans.push((start.pos(), pos.pos(), style.clone()));
-                            }
-                        }
-                    }
-                }
-            }
-            line_tokens.push(spans);
-        } else {
-            line_tokens.push(vec![]);
-        }
-    }
-
-    line_tokens
-}*/

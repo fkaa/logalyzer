@@ -29,14 +29,6 @@ pub struct LogRow {
 }
 
 impl LogRow {
-    pub fn time(&self) -> &str {
-        &self.line[..self.time as usize]
-    }
-
-    /*pub fn level(&self) -> &str {
-        &self.line[self.level.start as usize..self.level.end as usize]
-    }*/
-
     pub fn context(&self) -> &str {
         &self.line[self.context.start as usize..self.context.end as usize]
     }
