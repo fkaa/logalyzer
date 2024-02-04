@@ -98,6 +98,7 @@ impl ColumnList {
 pub struct AppState {
     file: String,
     db: DbApi,
+    total_rows: usize,
     table_state: TableState,
     scrollbar_state: ScrollbarState,
     should_quit: bool,
@@ -116,6 +117,7 @@ impl AppState {
         AppState {
             file,
             db,
+            total_rows,
             table_state: TableState::new().with_selected(Some(1)),
             scrollbar_state: ScrollbarState::new(total_rows),
             should_quit: false,
@@ -251,6 +253,8 @@ impl AppState {
             items: vec![
                 "Filter [f]".to_string(),
                 "Column Visibility [c]".to_string(),
+                "Move Top [g]".to_string(),
+                "Move Bot [G]".to_string(),
                 "Quit [q]".to_string(),
             ],
         };
@@ -429,16 +433,22 @@ impl AppState {
             }
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('j') => {
-                self.move_selection(1);
+                self.move_selection_relative(1);
             }
             KeyCode::Char('k') => {
-                self.move_selection(-1);
+                self.move_selection_relative(-1);
+            }
+            KeyCode::Char('g') => {
+                self.move_selection_fixed(0usize);
+            }
+            KeyCode::Char('G') => {
+                self.move_selection_fixed(self.total_rows);
             }
             _ => {}
         }
     }
 
-    pub fn move_selection(&mut self, delta: isize) {
+    pub fn move_selection_relative(&mut self, delta: isize) {
         if self.loading {
             return;
         }
@@ -468,6 +478,31 @@ impl AppState {
                 .get_rows(self.rows.offset + 100, 300, self.get_filters());
             self.table_state.select(Some(selection - 99));
             *self.table_state.offset_mut() -= 100;
+        }
+    }
+
+    pub fn move_selection_fixed(&mut self, position: usize) {
+        if self.loading {
+            return;
+        }
+
+        let min_items_to_read = 300;
+        if position < 300 {
+            self.db
+                .get_rows(0usize, min_items_to_read, self.get_filters());
+            self.table_state.select(Some(0));
+            *self.table_state.offset_mut() = 0;
+        } else if position > (self.total_rows - min_items_to_read - 1) {
+            let start_pos = (self.total_rows - min_items_to_read - 1);
+            self.db
+                .get_rows(start_pos, min_items_to_read, self.get_filters());
+            self.table_state.select(Some(300)); // Select the last item in the current buffer
+            *self.table_state.offset_mut() = 300;
+        } else {
+            self.db
+                .get_rows(position, min_items_to_read, self.get_filters());
+            self.table_state.select(Some(150)); // Select middle item
+            *self.table_state.offset_mut() = 150;
         }
     }
 
