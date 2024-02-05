@@ -123,7 +123,7 @@ impl LogFileState {
         &self.file
     }
 
-    pub fn draw(&mut self, area: Rect, frame: &mut Frame) {
+    pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
         let widths = self.columns.to_column_constraints();
 
         let rows = self

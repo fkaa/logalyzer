@@ -29,10 +29,6 @@ pub struct AppState {
     should_quit: bool,
 }
 
-impl Widget for &AppState {
-    fn render(self, area: Rect, buf: &mut Buffer) {}
-}
-
 impl AppState {
     pub fn new(system_report: Option<SystemReport>, log_files: Vec<LogFileState>) -> Self {
         let mut tab_names = Vec::new();
@@ -44,7 +40,6 @@ impl AppState {
         }
 
         let tabs = Tabs::new(tab_names)
-            .block(Block::default().title("Tabs").borders(Borders::ALL))
             .style(Style::default().white())
             .highlight_style(Style::default().yellow())
             .divider(symbols::DOT)
@@ -61,14 +56,25 @@ impl AppState {
     }
 
     pub fn should_quit(&self) -> bool {
-        self.should_quit
+        self.should_quit || self.log_files.iter().any(|f| f.should_quit())
     }
 
     fn render_tabs(&self, frame: &mut Frame, area: Rect) {
         frame.render_widget(self.tabs.clone(), area);
     }
-    fn render_content(&self, frame: &mut Frame, area: Rect) {
-        self.render_tabs(frame, area);
+    fn render_content(&mut self, frame: &mut Frame, area: Rect) {
+        if self.system_report.is_some() {
+            match self.selected_tab {
+                0 => {}
+                idx @ _ => {
+                    let log_file = &mut self.log_files[idx - 1];
+                    log_file.draw(frame, area);
+                }
+            }
+        } else {
+            let log_file = &mut self.log_files[self.selected_tab];
+            log_file.draw(frame, area);
+        }
     }
 
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
@@ -97,7 +103,9 @@ impl AppState {
 
             if self.system_report.is_some() {
                 match self.selected_tab {
-                    0 => {}
+                    0 => {
+                        self.handle_system_report_input(event);
+                    }
                     idx @ _ => {
                         let log_file = &mut self.log_files[idx - 1];
                         log_file.handle_event(event)?;
@@ -110,6 +118,17 @@ impl AppState {
         }
 
         Ok(())
+    }
+
+    fn handle_system_report_input(&mut self, event: Event) {
+        if let Event::Key(key) = &event {
+            if key.kind == event::KeyEventKind::Press {
+                match key.code {
+                    KeyCode::Char('q') => self.should_quit = true,
+                    _ => {}
+                }
+            }
+        }
     }
 }
 
