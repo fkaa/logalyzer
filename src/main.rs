@@ -60,6 +60,11 @@ fn main() -> io::Result<()> {
 fn run_ui(file: &String, db: DbApi, rows: usize) -> io::Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
+
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = restore_terminal();
+        println!("{:?}", info)
+    }));
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
     let mut app_state = AppState::new(file.clone(), db, rows);
@@ -69,6 +74,12 @@ fn run_ui(file: &String, db: DbApi, rows: usize) -> io::Result<()> {
         app_state.handle_events()?;
     }
 
+    restore_terminal()?;
+
+    Ok(())
+}
+
+fn restore_terminal() -> io::Result<()> {
     disable_raw_mode()?;
     stdout().execute(LeaveAlternateScreen)?;
 
