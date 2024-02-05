@@ -1,12 +1,13 @@
 use crossterm::event;
 use crossterm::event::{Event, KeyCode};
-use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::prelude::{Line, Modifier, Style};
 use ratatui::style::Color;
 use ratatui::widgets::{Block, Borders, Clear, HighlightSpacing, List, ListItem, ListState, Row};
-use crate::ui::{centered_rect};
+use ratatui::Frame;
+
 use crate::ui::cheat_sheet::CheatSheet;
+use crate::ui::{centered_rect, Key, KeyBinding, KeyBindings};
 
 pub struct ColumnSetting {
     pub index: usize,
@@ -18,13 +19,21 @@ pub struct ColumnSetting {
 pub struct ColumnList {
     state: ListState,
     items: Vec<ColumnSetting>,
+    up: KeyBinding,
+    down: KeyBinding,
+    mark: KeyBinding,
+    close: KeyBinding,
 }
 
 impl ColumnList {
-    pub fn new(items: Vec<ColumnSetting>) -> Self {
+    pub fn new(items: Vec<ColumnSetting>, bindings: &KeyBindings) -> Self {
         ColumnList {
             state: ListState::default(),
             items,
+            up: bindings.up.clone(),
+            down: bindings.down.clone(),
+            mark: KeyBinding::new("Toggle".into(), vec![Key(None, KeyCode::Char(' '))]),
+            close: KeyBinding::new("Close".into(), vec![Key(None, KeyCode::Char('c'))]),
         }
     }
 
@@ -40,8 +49,7 @@ impl ColumnList {
 
     pub(crate) fn get_header_row(&self) -> Row {
         Row::new(
-            self
-                .items
+            self.items
                 .iter()
                 .filter_map(|c| {
                     if c.visible {
@@ -73,27 +81,16 @@ impl ColumnList {
             .collect()
     }
 
-
     /// Returns true if the popup should close
     pub(crate) fn input(&mut self, event: &Event) -> bool {
-        if let Event::Key(key) = event {
-            if key.kind == event::KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Char('j') | KeyCode::Down => {
-                        self.next();
-                    }
-                    KeyCode::Char('k') | KeyCode::Up => {
-                        self.previous();
-                    }
-                    KeyCode::Char(' ') => {
-                        self.toggle();
-                    }
-                    KeyCode::Esc | KeyCode::Char('c') => {
-                        return true;
-                    }
-                    _ => {}
-                }
-            }
+        if self.up.is_pressed(event) {
+            self.previous();
+        } else if self.down.is_pressed(event) {
+            self.next();
+        } else if self.mark.is_pressed(event) {
+            self.toggle();
+        } else if self.close.is_pressed(event) {
+            return true;
         }
 
         false
@@ -108,8 +105,10 @@ impl ColumnList {
 
         let cheat_sheet = CheatSheet {
             items: vec![
-                "Toggle Visibility [ ]".to_string(),
-                "Close [Esc]".to_string(),
+                self.close.clone(),
+                self.up.clone(),
+                self.down.clone(),
+                self.mark.clone(),
             ],
         };
 
@@ -118,7 +117,7 @@ impl ColumnList {
             Direction::Vertical,
             vec![Constraint::Percentage(100), Constraint::Min(1)],
         )
-            .split(area);
+        .split(area);
 
         let outer_block = Block::default()
             .borders(Borders::ALL)

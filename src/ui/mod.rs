@@ -9,11 +9,12 @@ use tui_textarea::TextArea;
 
 use crate::db::{DbApi, DbLogRow};
 use crate::logalang::FilterRule;
-use crate::ui::cheat_sheet::CheatSheet;
-use crate::ui::columns::ColumnSetting;
 
 mod cheat_sheet;
 mod columns;
+
+use cheat_sheet::{CheatSheet, Key, KeyBinding};
+use columns::ColumnSetting;
 
 #[derive(Default)]
 pub struct LogRows {
@@ -25,6 +26,39 @@ enum Mode {
     Normal,
     Filter,
     Columns,
+}
+
+pub struct KeyBindings {
+    pub up: KeyBinding,
+    pub down: KeyBinding,
+    pub top: KeyBinding,
+    pub bot: KeyBinding,
+    pub filter: KeyBinding,
+    pub apply_filter: KeyBinding,
+    pub close_filter: KeyBinding,
+    pub columns: KeyBinding,
+    pub quit: KeyBinding,
+}
+
+impl Default for KeyBindings {
+    fn default() -> Self {
+        use KeyCode::*;
+
+        KeyBindings {
+            up: KeyBinding::new("Up".into(), vec![Key(None, Char('k'))]),
+            down: KeyBinding::new("Down".into(), vec![Key(None, Char('j'))]),
+            top: KeyBinding::new("Top".into(), vec![Key(None, Char('g'))]),
+            bot: KeyBinding::new("Bot".into(), vec![Key(None, Char('G'))]),
+            filter: KeyBinding::new("Filter".into(), vec![Key(None, Char('f'))]),
+            close_filter: KeyBinding::new("Close".into(), vec![Key(None, Esc)]),
+            apply_filter: KeyBinding::new(
+                "Apply filter".into(),
+                vec![Key(Some(KeyModifiers::CONTROL), Char('f'))],
+            ),
+            columns: KeyBinding::new("Columns".into(), vec![Key(None, Char('c'))]),
+            quit: KeyBinding::new("Quit".into(), vec![Key(None, Char('q'))]),
+        }
+    }
 }
 
 pub struct AppState {
@@ -41,23 +75,18 @@ pub struct AppState {
 
     // columns
     columns: columns::ColumnList,
+
+    bindings: KeyBindings,
 }
 
 impl AppState {
     pub fn new(file: String, mut db: DbApi, total_rows: usize) -> Self {
         db.get_rows(0, 1000, vec![]);
-        AppState {
-            file,
-            db,
-            total_rows,
-            table_state: TableState::new().with_selected(Some(1)),
-            scrollbar_state: ScrollbarState::new(total_rows),
-            should_quit: false,
-            loading: false,
-            rows: Default::default(),
-            mode: Mode::Normal,
-            filter_text_area: TextArea::default(),
-            columns: columns::ColumnList::new(vec![
+
+        let bindings = KeyBindings::default();
+
+        let columns = columns::ColumnList::new(
+            vec![
                 ColumnSetting {
                     index: 0,
                     name: "Id".into(),
@@ -112,13 +141,27 @@ impl AppState {
                     visible: true,
                     width: Constraint::Percentage(100),
                 },
-            ]),
+            ],
+            &bindings,
+        );
+        AppState {
+            file,
+            db,
+            total_rows,
+            table_state: TableState::new().with_selected(Some(1)),
+            scrollbar_state: ScrollbarState::new(total_rows),
+            should_quit: false,
+            loading: false,
+            rows: Default::default(),
+            mode: Mode::Normal,
+            filter_text_area: TextArea::default(),
+            columns,
+            bindings,
         }
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
-        let widths = self
-            .columns.to_column_constraints();
+        let widths = self.columns.to_column_constraints();
 
         let rows = self
             .rows
@@ -129,10 +172,11 @@ impl AppState {
 
         let table = Table::new(rows, widths)
             .header(
-                self.columns.get_header_row()
-                .style(Style::new())
-                // To add space between the header and the rest of the rows, specify the margin
-                .bottom_margin(1),
+                self.columns
+                    .get_header_row()
+                    .style(Style::new())
+                    // To add space between the header and the rest of the rows, specify the margin
+                    .bottom_margin(1),
             )
             .block(
                 Block::default()
@@ -167,11 +211,13 @@ impl AppState {
 
         let cheat_sheet = CheatSheet {
             items: vec![
-                "Filter [f]".to_string(),
-                "Column Visibility [c]".to_string(),
-                "Move Top [g]".to_string(),
-                "Move Bot [G]".to_string(),
-                "Quit [q]".to_string(),
+                self.bindings.quit.clone(),
+                self.bindings.columns.clone(),
+                self.bindings.filter.clone(),
+                self.bindings.up.clone(),
+                self.bindings.down.clone(),
+                self.bindings.top.clone(),
+                self.bindings.bot.clone(),
             ],
         };
 
@@ -217,8 +263,8 @@ impl AppState {
 
             let cheat_sheet = CheatSheet {
                 items: vec![
-                    "Apply Filter [<C-f>]".to_string(),
-                    "Close [Esc]".to_string(),
+                    self.bindings.apply_filter.clone(),
+                    self.bindings.close_filter.clone(),
                 ],
             };
 
@@ -244,11 +290,7 @@ impl AppState {
 
             match self.mode {
                 Mode::Normal => {
-                    if let Event::Key(key) = &event {
-                        if key.kind == event::KeyEventKind::Press {
-                            self.handle_normal_input(key);
-                        }
-                    }
+                    self.handle_normal_input(&event);
                 }
                 Mode::Filter => {
                     if let Event::Key(key) = &event {
@@ -288,28 +330,21 @@ impl AppState {
         }
     }
 
-    fn handle_normal_input(&mut self, key: &KeyEvent) {
-        match key.code {
-            KeyCode::Char('f') => {
-                self.mode = Mode::Filter;
-            }
-            KeyCode::Char('c') => {
-                self.mode = Mode::Columns;
-            }
-            KeyCode::Char('q') => self.should_quit = true,
-            KeyCode::Char('j') => {
-                self.move_selection_relative(1);
-            }
-            KeyCode::Char('k') => {
-                self.move_selection_relative(-1);
-            }
-            KeyCode::Char('g') => {
-                self.move_selection_fixed(0usize);
-            }
-            KeyCode::Char('G') => {
-                self.move_selection_fixed(self.total_rows);
-            }
-            _ => {}
+    fn handle_normal_input(&mut self, event: &Event) {
+        if self.bindings.filter.is_pressed(event) {
+            self.mode = Mode::Filter;
+        } else if self.bindings.columns.is_pressed(event) {
+            self.mode = Mode::Columns;
+        } else if self.bindings.quit.is_pressed(event) {
+            self.should_quit = true
+        } else if self.bindings.up.is_pressed(event) {
+            self.move_selection_relative(-1);
+        } else if self.bindings.down.is_pressed(event) {
+            self.move_selection_relative(1);
+        } else if self.bindings.top.is_pressed(event) {
+            self.move_selection_fixed(0usize);
+        } else if self.bindings.bot.is_pressed(event) {
+            self.move_selection_fixed(self.total_rows);
         }
     }
 
