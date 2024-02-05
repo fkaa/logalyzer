@@ -38,6 +38,7 @@ pub struct KeyBindings {
     pub close_filter: KeyBinding,
     pub columns: KeyBinding,
     pub quit: KeyBinding,
+    pub console: KeyBinding,
 }
 
 impl Default for KeyBindings {
@@ -57,6 +58,10 @@ impl Default for KeyBindings {
             ),
             columns: KeyBinding::new("Columns".into(), vec![Key(None, Char('c'))]),
             quit: KeyBinding::new("Quit".into(), vec![Key(None, Char('q'))]),
+            console: KeyBinding::new(
+                "Console".into(),
+                vec![Key(Some(KeyModifiers::CONTROL), Char('c'))],
+            ),
         }
     }
 }
@@ -72,6 +77,7 @@ pub struct AppState {
     rows: LogRows,
     mode: Mode,
     filter_text_area: TextArea<'static>,
+    show_console: bool,
 
     // columns
     columns: columns::ColumnList,
@@ -154,6 +160,7 @@ impl AppState {
             loading: false,
             rows: Default::default(),
             mode: Mode::Normal,
+            show_console: false,
             filter_text_area: TextArea::default(),
             columns,
             bindings,
@@ -212,6 +219,7 @@ impl AppState {
         let cheat_sheet = CheatSheet {
             items: vec![
                 self.bindings.quit.clone(),
+                self.bindings.console.clone(),
                 self.bindings.columns.clone(),
                 self.bindings.filter.clone(),
                 self.bindings.up.clone(),
@@ -223,19 +231,17 @@ impl AppState {
 
         let area = frame.size();
 
-        let layout = Layout::new(
-            Direction::Vertical,
-            vec![
-                Constraint::Percentage(100),
-                Constraint::Min(1),
-                Constraint::Min(15),
-            ],
-        )
-        .split(area);
+        let mut constraints = vec![Constraint::Percentage(100), Constraint::Min(1)];
+        if self.show_console {
+            constraints.push(Constraint::Min(15));
+        }
+        let layout = Layout::new(Direction::Vertical, constraints).split(area);
 
         frame.render_stateful_widget(table, layout[0], &mut self.table_state);
         frame.render_widget(cheat_sheet.to_widget(), layout[1]);
-        frame.render_widget(tui_w, layout[2]);
+        if self.show_console {
+            frame.render_widget(tui_w, layout[2]);
+        }
 
         frame.render_stateful_widget(
             scrollbar,
@@ -333,6 +339,8 @@ impl AppState {
     fn handle_normal_input(&mut self, event: &Event) {
         if self.bindings.filter.is_pressed(event) {
             self.mode = Mode::Filter;
+        } else if self.bindings.console.is_pressed(event) {
+            self.show_console = !self.show_console;
         } else if self.bindings.columns.is_pressed(event) {
             self.mode = Mode::Columns;
         } else if self.bindings.quit.is_pressed(event) {
