@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Instant;
 
 use crate::db::DbApi;
-use crate::ui::AppState;
+use crate::ui::{AppState, LogFileState};
 use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
@@ -52,9 +52,10 @@ fn main() -> io::Result<()> {
         tui_logger::set_default_level(log::LevelFilter::Trace);
 
         let db = DbApi::new();
+        let mut log_file = LogFileState::new(file.clone(), db, rows);
 
         let result = panic::catch_unwind(|| {
-            run_ui(&file, db, rows).unwrap();
+            run_ui(AppState::new(None, vec![log_file])).unwrap();
         });
 
         if let Err(e) = result {
@@ -65,22 +66,31 @@ fn main() -> io::Result<()> {
         }
     } else if file.ends_with(".zip") {
         let system_report = system_report::open(&file).unwrap();
-        dbg!(system_report);
+        dbg!(&system_report);
+
+        let result = panic::catch_unwind(|| {
+            run_ui(AppState::new(Some(system_report), vec![])).unwrap();
+        });
+
+        if let Err(e) = result {
+            disable_raw_mode()?;
+            stdout().execute(LeaveAlternateScreen)?;
+
+            eprintln!("{:?}", e);
+        }
     }
 
     Ok(())
 }
 
-fn run_ui(file: &String, db: DbApi, rows: usize) -> io::Result<()> {
+fn run_ui(mut state: AppState) -> io::Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
-    let mut app_state = AppState::new(file.clone(), db, rows);
-
-    while !app_state.should_quit() {
-        terminal.draw(|f| app_state.draw(f))?;
-        app_state.handle_events()?;
+    while !state.should_quit() {
+        terminal.draw(|f| state.draw(f))?;
+        state.handle_events()?;
     }
 
     disable_raw_mode()?;

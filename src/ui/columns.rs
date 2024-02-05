@@ -1,12 +1,12 @@
+use crate::ui::centered_rect;
+use crate::ui::cheat_sheet::CheatSheet;
 use crossterm::event;
 use crossterm::event::{Event, KeyCode};
-use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::prelude::{Line, Modifier, Style};
 use ratatui::style::Color;
 use ratatui::widgets::{Block, Borders, Clear, HighlightSpacing, List, ListItem, ListState, Row};
-use crate::ui::{centered_rect};
-use crate::ui::cheat_sheet::CheatSheet;
+use ratatui::Frame;
 
 pub struct ColumnSetting {
     pub index: usize,
@@ -40,8 +40,7 @@ impl ColumnList {
 
     pub(crate) fn get_header_row(&self) -> Row {
         Row::new(
-            self
-                .items
+            self.items
                 .iter()
                 .filter_map(|c| {
                     if c.visible {
@@ -72,7 +71,6 @@ impl ColumnList {
             })
             .collect()
     }
-
 
     /// Returns true if the popup should close
     pub(crate) fn input(&mut self, event: &Event) -> bool {
@@ -118,7 +116,7 @@ impl ColumnList {
             Direction::Vertical,
             vec![Constraint::Percentage(100), Constraint::Min(1)],
         )
-            .split(area);
+        .split(area);
 
         let outer_block = Block::default()
             .borders(Borders::ALL)

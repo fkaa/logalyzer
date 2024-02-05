@@ -21,3 +21,5 @@ assert_matches = "1.5.0"
 zip = "0.6.6"
 anyhow = "1.0.79"
 tui-scrollview = "0.2.1"
+quick-xml = { version = "0.31.0", features = ["serialize"] }
+serde = { version = "1.0.196", features = ["derive"] }

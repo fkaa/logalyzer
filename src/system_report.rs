@@ -1,37 +1,14 @@
 use std::fs::File;
 use std::io::BufReader;
 
+mod server_config_sheet;
+
 #[derive(Debug)]
 pub struct SystemReport {
     archive: zip::ZipArchive<BufReader<File>>,
     client_logs: Vec<(String, zip::DateTime)>,
     server_logs: Vec<(String, zip::DateTime)>,
-}
-
-struct SystemInformation {
-    program_version: String,
-    protocol_version: String,
-    process: String,
-    directx_version: String,
-    net_clr_version: String,
-    application_culture: String,
-    installation_path: String,
-    is_axir_nvr: bool,
-    machine_name: String,
-    operating_system: String,
-    os_culture: String,
-    os_version: String,
-    domain: bool,
-    generated: String,
-}
-
-struct NetworkInformation {
-    adapters: Vec<NetworkAdapter>,
-}
-
-struct NetworkAdapter {
-    name: String,
-    ip: String,
+    server_config_sheet: Option<server_config_sheet::Document>,
 }
 
 pub fn open(path: &str) -> anyhow::Result<SystemReport> {
@@ -40,9 +17,12 @@ pub fn open(path: &str) -> anyhow::Result<SystemReport> {
 
     let mut client_logs = Vec::new();
     let mut server_logs = Vec::new();
+    let mut server_config_sheet = None;
 
     for i in 0..zip.len() {
         let file = zip.by_index(i)?;
+
+        println!("Filename: {}", file.name());
 
         if file.name().ends_with(".log") {
             if file.name().starts_with("Server/AcsService.exe") {
@@ -52,13 +32,16 @@ pub fn open(path: &str) -> anyhow::Result<SystemReport> {
             }
         }
 
-        println!("Filename: {}", file.name());
+        if file.name().ends_with("ServerConfigurationSheet.xml") {
+            server_config_sheet = Some(quick_xml::de::from_reader(BufReader::new(file))?);
+        }
     }
 
     let system_report = SystemReport {
         archive: zip,
         client_logs,
         server_logs,
+        server_config_sheet,
     };
 
     Ok(system_report)
