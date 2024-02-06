@@ -6,6 +6,8 @@ use std::time::Instant;
 use crate::db::DbApi;
 use crate::ui::AppState;
 use crossterm::{
+    event::DisableMouseCapture,
+    event::EnableMouseCapture,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
@@ -60,6 +62,7 @@ fn main() -> io::Result<()> {
 fn run_ui(file: &String, db: DbApi, rows: usize) -> io::Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
+    stdout().execute(EnableMouseCapture)?;
 
     std::panic::set_hook(Box::new(move |info| {
         let _ = restore_terminal();
@@ -82,6 +85,7 @@ fn run_ui(file: &String, db: DbApi, rows: usize) -> io::Result<()> {
 fn restore_terminal() -> io::Result<()> {
     disable_raw_mode()?;
     stdout().execute(LeaveAlternateScreen)?;
+    stdout().execute(DisableMouseCapture)?;
 
     Ok(())
 }

@@ -1,5 +1,5 @@
 use crossterm::event;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::{prelude::*, widgets::*};
 use tui_textarea::TextArea;
 
@@ -287,9 +287,9 @@ impl LogFile {
             self.mode = Mode::Columns;
         } else if self.bindings.quit.is_pressed(event) {
             self.should_quit = true
-        } else if self.bindings.up.is_pressed(event) {
+        } else if self.bindings.up.is_pressed(event) || is_scroll_up(event) {
             self.move_selection_relative(-1);
-        } else if self.bindings.down.is_pressed(event) {
+        } else if self.bindings.down.is_pressed(event) || is_scroll_down(event) {
             self.move_selection_relative(1);
         } else if self.bindings.top.is_pressed(event) {
             self.move_selection_fixed(0usize);
@@ -395,4 +395,28 @@ fn level_to_cell(level: i8) -> Cell<'static> {
         crate::parse::FATAL => Cell::new("FATAL").style(Style::new().fg(Color::Red)),
         _ => Cell::new("UNKNWN"),
     }
+}
+
+fn is_scroll_up(event: &Event) -> bool {
+    if let Event::Mouse(MouseEvent {
+        kind: MouseEventKind::ScrollUp,
+        ..
+    }) = event
+    {
+        return true;
+    }
+
+    false
+}
+
+fn is_scroll_down(event: &Event) -> bool {
+    if let Event::Mouse(MouseEvent {
+        kind: MouseEventKind::ScrollDown,
+        ..
+    }) = event
+    {
+        return true;
+    }
+
+    false
 }
