@@ -109,11 +109,13 @@ impl AppState {
         if event::poll(Duration::from_millis(50))? {
             let event = event::read()?;
 
-            if self.bindings.quit.is_pressed(&event) {
+            if self.bindings.console.is_pressed(&event) {
+                self.show_console = !self.show_console;
+            } else if self.bindings.quit.is_pressed(&event) {
                 self.should_quit = true;
+            } else {
+                self.log.input(&event);
             }
-
-            self.log.input(&event);
         }
 
         Ok(())
