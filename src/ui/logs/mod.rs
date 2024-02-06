@@ -9,6 +9,8 @@ use super::KeyBindings;
 use crate::db::{DbApi, DbLogRow};
 use crate::logalang::FilterRule;
 
+mod filter;
+
 #[derive(Default)]
 pub struct LogRows {
     offset: usize,
