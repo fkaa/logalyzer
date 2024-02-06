@@ -1,4 +1,3 @@
-use crossterm::event;
 use crossterm::event::{Event, KeyCode};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::prelude::{Line, Modifier, Style};

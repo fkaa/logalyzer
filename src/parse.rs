@@ -106,7 +106,9 @@ fn parse_line(line: String) -> Option<LogRow> {
     let s = s.parse::<u32>().ok()?;
     let ms = ms.parse::<u32>().ok()?;
 
-    let time_unixtime = NaiveDate::from_ymd_opt(y, m, d)?.and_hms_milli_opt(h, min, s, ms).unwrap();
+    let time_unixtime = NaiveDate::from_ymd_opt(y, m, d)?
+        .and_hms_milli_opt(h, min, s, ms)
+        .unwrap();
     let time_unixtime = time_unixtime.timestamp_millis();
 
     Some(LogRow {
@@ -173,10 +175,7 @@ mod test {
         assert_eq!(line.level, 2);
         assert_eq!(line.context(), "");
         assert_eq!(line.thread(), "  24");
-        assert_eq!(
-            line.file(),
-            "TcpConnection.cs(73)"
-        );
+        assert_eq!(line.file(), "TcpConnection.cs(73)");
         assert_eq!(line.method(), "Open");
         assert_eq!(line.object(), "");
         assert_eq!(
