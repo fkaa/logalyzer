@@ -1,7 +1,6 @@
 use crossterm::event;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{prelude::*, widgets::*};
-use tui_logger::{TuiLoggerLevelOutput, TuiLoggerWidget};
 use tui_textarea::TextArea;
 
 use super::cheat_sheet::CheatSheet;
@@ -42,7 +41,7 @@ pub struct LogFile {
 
 impl LogFile {
     pub fn new(bindings: KeyBindings, file: String, mut db: DbApi, total_rows: usize) -> Self {
-        db.get_rows(0, 1000, vec![]);
+        db.get_rows(0, 300, vec![]);
 
         let columns = ColumnList::new(
             vec![
@@ -153,20 +152,6 @@ impl LogFile {
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
             .highlight_symbol(">>");
 
-        let _tui_w: TuiLoggerWidget = TuiLoggerWidget::default()
-            .block(
-                Block::default()
-                    .title("stdout")
-                    .border_style(Style::default().fg(Color::White).bg(Color::Black))
-                    .borders(Borders::ALL),
-            )
-            .output_separator('|')
-            .output_timestamp(Some("%F %H:%M:%S%.3f".to_string()))
-            .output_level(Some(TuiLoggerLevelOutput::Long))
-            .output_target(false)
-            .output_file(false)
-            .output_line(false)
-            .style(Style::default().fg(Color::White).bg(Color::Black));
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalLeft);
 
         let cheat_sheet = CheatSheet {
