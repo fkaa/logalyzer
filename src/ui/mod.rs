@@ -29,6 +29,7 @@ pub struct KeyBindings {
     pub columns: KeyBinding,
     pub quit: KeyBinding,
     pub console: KeyBinding,
+    pub preview: KeyBinding,
 }
 
 impl Default for KeyBindings {
@@ -52,6 +53,7 @@ impl Default for KeyBindings {
                 "Console".into(),
                 vec![Key(Some(KeyModifiers::CONTROL), Char('c'))],
             ),
+            preview: KeyBinding::new("Preview".into(), vec![Key(None, Char('p'))])
         }
     }
 }

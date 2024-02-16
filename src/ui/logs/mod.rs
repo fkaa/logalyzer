@@ -34,6 +34,7 @@ pub struct LogFile {
     mode: Mode,
     bindings: KeyBindings,
     max_id_row_width: u32,
+    show_preview: bool,
 
     filter_text_area: TextArea<'static>,
 
@@ -68,10 +69,7 @@ impl LogFile {
             })
         }
 
-        let columns = ColumnList::new(
-            column_settings,
-            &bindings,
-        );
+        let columns = ColumnList::new(column_settings, &bindings);
 
         LogFile {
             file,
@@ -87,6 +85,7 @@ impl LogFile {
             columns,
             max_id_row_width: 0,
             bindings,
+            show_preview: false,
         }
     }
 
@@ -156,14 +155,36 @@ impl LogFile {
                 self.bindings.down.clone(),
                 self.bindings.top.clone(),
                 self.bindings.bot.clone(),
+                self.bindings.preview.clone(),
             ],
         };
 
-        let constraints = vec![Constraint::Percentage(100), Constraint::Min(1)];
+        let mut text = String::new();
+        if let Some(selected_row) = &self.rows.rows.get(self.table_state.selected().unwrap()) {
+            if let RowValue::String(msg) = selected_row.last().unwrap() {
+                text = msg.clone().replace('↵', "\n");
+            }
+        }
+        let preview_window =
+            Paragraph::new(text).block(Block::new().borders(Borders::ALL).title("Preview")).wrap(Wrap { trim: false });
+
+        let mut constraints = Vec::new();
+        constraints.push(Constraint::Percentage(100));
+        if self.show_preview {
+            constraints.push(Constraint::Min(15));
+        }
+        constraints.push(Constraint::Min(1));
+
         let layout = Layout::new(Direction::Vertical, constraints).split(area);
 
         frame.render_stateful_widget(table, layout[0], &mut self.table_state);
-        frame.render_widget(cheat_sheet.to_widget(), layout[1]);
+
+        if self.show_preview {
+            frame.render_widget(preview_window, layout[1]);
+            frame.render_widget(cheat_sheet.to_widget(), layout[2]);
+        } else {
+            frame.render_widget(cheat_sheet.to_widget(), layout[1]);
+        }
 
         frame.render_stateful_widget(
             scrollbar,
@@ -286,6 +307,8 @@ impl LogFile {
             self.move_selection_fixed(0usize);
         } else if self.bindings.bot.is_pressed(event) {
             self.move_selection_fixed(self.total_rows);
+        } else if self.bindings.preview.is_pressed(event) {
+            self.show_preview = !self.show_preview;
         }
     }
 
