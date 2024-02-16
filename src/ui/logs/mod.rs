@@ -8,6 +8,7 @@ use super::columns::{ColumnList, ColumnSetting};
 use super::KeyBindings;
 use crate::db::{DbApi, DbLogRow, DbResponse};
 use crate::logalang::FilterRule;
+use crate::parse::{LogRow, RowValue};
 
 #[derive(Default)]
 pub struct LogRows {
@@ -126,7 +127,7 @@ impl LogFile {
         self.rows.rows = response.rows;
 
         // TODO: ugly
-        self.max_id_row_width = self
+        /*self.max_id_row_width = self
             .rows
             .rows
             .iter()
@@ -134,7 +135,7 @@ impl LogFile {
             .max()
             .map(|id| id.ilog10() + 1)
             .unwrap_or(4);
-        self.columns.items[0].width = Constraint::Length(self.max_id_row_width as u16);
+        self.columns.items[0].width = Constraint::Length(self.max_id_row_width as u16);*/
     }
 
     pub fn draw(&mut self, area: Rect, frame: &mut Frame) {
@@ -379,28 +380,27 @@ impl LogFile {
     }
 }
 
-fn db_row_to_ui_row<'a, 'b>(row: &'a DbLogRow, settings: &'b [ColumnSetting]) -> Row<'a> {
-    let time = chrono::DateTime::UNIX_EPOCH + chrono::Duration::milliseconds(row.time);
+fn row_value_to_cell(row: RowValue) -> Cell<'static> {
+    match row {
+        RowValue::String(val) => Cell::new(val),
+        RowValue::Date(time) => {
+            let time = chrono::DateTime::UNIX_EPOCH + chrono::Duration::milliseconds(time);
 
+            Cell::new(format!("{}", time.format("%y-%m-%d %T%.3f")))
+        }
+        RowValue::Integer(val) => Cell::new(format!("{val}"))
+    }
+}
+
+fn db_row_to_ui_row<'a, 'b>(rows: &'a DbLogRow, settings: &'b [ColumnSetting]) -> Row<'a> {
     let mut cells = Vec::new();
-    for setting in settings {
+
+    for (setting, row) in settings.iter().zip(rows) {
         if !setting.visible {
             continue;
         }
 
-        let cell = match setting.index {
-            0 => Cell::new(format!("{}", row.id)),
-            1 => Cell::new(format!("{}", time.format("%y-%m-%d %T%.3f"))),
-            2 => level_to_cell(row.level),
-            3 => Cell::new(row.context.clone()),
-            4 => Cell::new(row.thread.clone()),
-            5 => Cell::new(Line::from(row.file.as_str()).alignment(Alignment::Right)),
-            6 => Cell::new(row.method.clone()),
-            7 => Cell::new(row.object.clone()),
-            8 => Cell::new(row.message.clone()),
-            _ => unreachable!(),
-        };
-
+        let cell = row_value_to_cell(row.clone());
         cells.push(cell);
     }
 

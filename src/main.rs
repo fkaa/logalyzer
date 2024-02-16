@@ -4,6 +4,8 @@ use std::thread;
 use std::time::Instant;
 
 use crate::db::DbApi;
+use crate::parse::ParserInstruction;
+use crate::parse::{ColumnDefinition, Parser};
 use crate::ui::AppState;
 use crossterm::{
     event::DisableMouseCapture,
@@ -38,12 +40,16 @@ fn main() -> io::Result<()> {
         &first
     };
 
+    let parser = get_parser();
+    let db = DbApi::new(parser.columns.clone());
+
     let (send, recv) = mpsc::sync_channel(16);
 
+    let column_count = parser.columns.len();
     let handle = thread::spawn(move || {
-        db::consumer(recv, BATCH_SIZE);
+        db::consumer(column_count, recv, BATCH_SIZE);
     });
-    parse::producer(send, &file, BATCH_SIZE);
+    parse::producer(send, &file, parser, BATCH_SIZE);
 
     handle.join().unwrap();
 
@@ -51,12 +57,74 @@ fn main() -> io::Result<()> {
     println!("Program done in {:.2?} ({rows} rows)", now.elapsed());
 
     if first != "parse" {
-        let db = DbApi::new();
-
         run_ui(file, db, rows)?;
     }
 
     Ok(())
+}
+
+fn get_parser() -> Parser {
+    use ParserInstruction::*;
+    let parser = Parser::new(
+        vec![
+            Begin,
+            Skip(23),
+            EmitDate,
+            Skip(2),
+            Begin,
+            SkipUntilChar(' '),
+            EmitEnumeration(vec![
+                "TRACE".into(),
+                "DEBUG".into(),
+                "INFO".into(),
+                "WARN".into(),
+                "ERROR".into(),
+                "FATAL".into(),
+            ]),
+            SkipUntilChar('['),
+            Skip(1),
+            Begin,
+            SkipUntilChar(']'),
+            EmitString,
+            SkipUntilChar('['),
+            Skip(1),
+            Begin,
+            SkipUntilChar(']'),
+            EmitString,
+            Skip(2),
+            Begin,
+            SkipUntilChar(','),
+            EmitString,
+            Skip(3),
+            Begin,
+            SkipUntilString(" <".into()),
+            EmitString,
+            SkipUntilChar('-'),
+            Skip(2),
+            Begin,
+            EmitRemainder,
+        ],
+        vec![
+            ColumnDefinition::date("Date".to_string()),
+            ColumnDefinition::enumeration(
+                "Level".to_string(),
+                vec![
+                    "TRACE".into(),
+                    "DEBUG".into(),
+                    "INFO".into(),
+                    "WARN".into(),
+                    "ERROR".into(),
+                    "FATAL".into(),
+                ],
+            ),
+            ColumnDefinition::string("Context".to_string()),
+            ColumnDefinition::string("Thread".to_string()),
+            ColumnDefinition::string("File".to_string()),
+            ColumnDefinition::string("Method".to_string()),
+            ColumnDefinition::string("Message".to_string()),
+        ],
+    );
+    parser
 }
 
 fn run_ui(file: &String, db: DbApi, rows: usize) -> io::Result<()> {
