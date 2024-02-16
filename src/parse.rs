@@ -4,10 +4,15 @@ use std::ops::Range;
 use std::sync::mpsc;
 use std::time::Instant;
 
-use chrono::NaiveDate;
-use unicode_bom::Bom;
 use crate::db::DbLogRow;
-use crate::parse::ParserInstruction::{Begin, EmitDate, EmitEnumeration, EmitRemainder, EmitString, Skip, SkipUntilChar, SkipUntilString};
+use crate::parse::ParserInstruction::{
+    Begin, EmitDate, EmitEnumeration, EmitRemainder, EmitString, Skip, SkipUntilChar,
+    SkipUntilString,
+};
+use chrono::NaiveDate;
+use log::warn;
+use ratatui::layout::Constraint;
+use unicode_bom::Bom;
 
 pub const TRACE: i8 = 0;
 pub const INFO: i8 = 1;
@@ -30,27 +35,31 @@ pub enum ColumnType {
 pub struct ColumnDefinition {
     pub nice_name: String,
     pub column_type: ColumnType,
+    pub column_width: Constraint,
 }
 
 impl ColumnDefinition {
-    pub fn string(nice_name: String) -> Self {
+    pub fn string(nice_name: String, column_width: Constraint) -> Self {
         ColumnDefinition {
             nice_name,
             column_type: ColumnType::String,
+            column_width,
         }
     }
 
-    pub fn date(nice_name: String) -> Self {
+    pub fn date(nice_name: String, column_width: Constraint) -> Self {
         ColumnDefinition {
             nice_name,
             column_type: ColumnType::Date,
+            column_width,
         }
     }
 
-    pub fn enumeration(nice_name: String, enumerations: Vec<String>) -> Self {
+    pub fn enumeration(nice_name: String, column_width: Constraint, enumerations: Vec<String>) -> Self {
         ColumnDefinition {
             nice_name,
             column_type: ColumnType::Enumeration(enumerations),
+            column_width,
         }
     }
 }
@@ -87,7 +96,8 @@ impl Parser {
             match i {
                 EmitDate => {
                     let date_str = &line[begin_index..index];
-                    let date = parse_datetime(date_str).unwrap();
+                    let date =
+                        parse_datetime(date_str).ok_or(format!("Invalid datetime {date_str}"))?;
 
                     values.push(RowValue::Date(date));
                 }
@@ -241,7 +251,12 @@ fn parse_line(line: String) -> Option<LogRow> {
     })
 }
 
-pub fn producer(send: mpsc::SyncSender<Vec<DbLogRow>>, path: &str, parser: Parser, batch_size: usize) {
+pub fn producer(
+    send: mpsc::SyncSender<Vec<DbLogRow>>,
+    path: &str,
+    parser: Parser,
+    batch_size: usize,
+) {
     let bom = getbom(path);
     let mut reader = BufReader::new(File::open(path).unwrap());
 
@@ -254,22 +269,44 @@ pub fn producer(send: mpsc::SyncSender<Vec<DbLogRow>>, path: &str, parser: Parse
 
     let now = Instant::now();
     let mut i = 0;
+    let mut latest_parsed_row = None;
 
     for line in reader.lines() {
         let line = line.unwrap();
-        let values = parser.parse_line(&line).unwrap();
+        match parser.parse_line(&line) {
+            Ok(values) => {
+                if let Some(row) = latest_parsed_row.take() {
+                    batch.push(row);
+                    if batch.len() >= batch_size {
+                        let old_vec = std::mem::replace(&mut batch, Vec::new());
+                        send.send(old_vec).unwrap();
+                    }
+                }
+                latest_parsed_row = Some(values);
+
+                i += 1;
+            }
+            Err(e) => {
+                warn!("Error while parsing line: {e}");
+                if let Some(mut row) = latest_parsed_row.take() {
+                    if let Some(last) = row.last_mut() {
+                        if let RowValue::String(ref mut s) = last {
+                            *s += &line;
+                        }
+                    }
+                }
+            }
+        };
 
         //if let Some(row) = parse_line(line) {
-            batch.push(values);
 
-            if batch.len() >= batch_size {
-                let old_vec = std::mem::replace(&mut batch, Vec::new());
-                send.send(old_vec).unwrap();
-            }
-
-            i += 1;
         //}
     }
+
+    if let Some(mut row) = latest_parsed_row.take() {
+        batch.push(row);
+    }
+    send.send(batch).unwrap();
 
     println!("Reading {i} lines took {:.2?}", now.elapsed());
 }
@@ -343,6 +380,10 @@ mod test {
                 Begin,
                 SkipUntilString(" <".into()),
                 EmitString,
+                Skip(2),
+                Begin,
+                SkipUntilChar('>'),
+                EmitString,
                 SkipUntilChar('-'),
                 Skip(2),
                 Begin,
@@ -352,6 +393,7 @@ mod test {
         );
 
         let a = parser.parse_line("2023-12-04 01:12:30,690  DEBUG [] [  24] CA.Core\\WebProxy\\TcpConnection\\TcpConnection.cs(73),  Open <> - Setting up secure connection [73fc :: 95bf]");
+        let a = parser.parse_line("2024-01-11 02:40:52,860  DEBUG [0.1.Facades-56.WindowsClient-0.1686.] [  25] Axis.MediaStreaming\\BufferingDataSpanReader.cs(80),  Start <6518> - Start");
 
         dbg!(a);
         parser.parse_line("2023-12-08 09:45:01,199  INFO  [0.1.Facades-38.WindowsClient-0.5969.32.] [ 489] Server\\Common\\DatabaseHandling\\Private\\FirebirdService.cs(481),  DoGbakBackup <> - gbak:    writing privilege for user SYSDBA");

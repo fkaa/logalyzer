@@ -14,6 +14,7 @@ use crossterm::{
     ExecutableCommand,
 };
 use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Constraint;
 use ratatui::Terminal;
 
 mod db;
@@ -45,6 +46,8 @@ fn main() -> io::Result<()> {
 
     let (send, recv) = mpsc::sync_channel(16);
 
+    let columns = parser.columns.clone();
+
     let column_count = parser.columns.len();
     let handle = thread::spawn(move || {
         db::consumer(column_count, recv, BATCH_SIZE);
@@ -57,7 +60,7 @@ fn main() -> io::Result<()> {
     println!("Program done in {:.2?} ({rows} rows)", now.elapsed());
 
     if first != "parse" {
-        run_ui(file, db, rows)?;
+        run_ui(columns, file, db, rows)?;
     }
 
     Ok(())
@@ -99,15 +102,20 @@ fn get_parser() -> Parser {
             Begin,
             SkipUntilString(" <".into()),
             EmitString,
+            Skip(2),
+            Begin,
+            SkipUntilChar('>'),
+            EmitString,
             SkipUntilChar('-'),
             Skip(2),
             Begin,
             EmitRemainder,
         ],
         vec![
-            ColumnDefinition::date("Date".to_string()),
+            ColumnDefinition::date("Date".to_string(), Constraint::Length(23)),
             ColumnDefinition::enumeration(
                 "Level".to_string(),
+                Constraint::Length(5),
                 vec![
                     "TRACE".into(),
                     "DEBUG".into(),
@@ -117,17 +125,18 @@ fn get_parser() -> Parser {
                     "FATAL".into(),
                 ],
             ),
-            ColumnDefinition::string("Context".to_string()),
-            ColumnDefinition::string("Thread".to_string()),
-            ColumnDefinition::string("File".to_string()),
-            ColumnDefinition::string("Method".to_string()),
-            ColumnDefinition::string("Message".to_string()),
+            ColumnDefinition::string("Context".to_string(), Constraint::Length(8)),
+            ColumnDefinition::string("Thread".to_string(), Constraint::Length(8)),
+            ColumnDefinition::string("File".to_string(), Constraint::Length(8)),
+            ColumnDefinition::string("Method".to_string(), Constraint::Length(8)),
+            ColumnDefinition::string("Object".to_string(), Constraint::Length(8)),
+            ColumnDefinition::string("Message".to_string(), Constraint::Percentage(100)),
         ],
     );
     parser
 }
 
-fn run_ui(file: &String, db: DbApi, rows: usize) -> io::Result<()> {
+fn run_ui(columns: Vec<ColumnDefinition>, file: &String, db: DbApi, rows: usize) -> io::Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
     stdout().execute(EnableMouseCapture)?;
@@ -138,7 +147,7 @@ fn run_ui(file: &String, db: DbApi, rows: usize) -> io::Result<()> {
     }));
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
-    let mut app_state = AppState::new(file.clone(), db, rows);
+    let mut app_state = AppState::new(columns, file.clone(), db, rows);
 
     while !app_state.should_quit() {
         terminal.draw(|f| app_state.draw(f))?;

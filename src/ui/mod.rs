@@ -15,6 +15,7 @@ mod logs;
 use cheat_sheet::{Key, KeyBinding};
 
 use logs::LogFile;
+use crate::parse::ColumnDefinition;
 
 #[derive(Clone)]
 pub struct KeyBindings {
@@ -63,9 +64,9 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(file: String, db: DbApi, total_rows: usize) -> Self {
+    pub fn new(columns: Vec<ColumnDefinition>,file: String, db: DbApi, total_rows: usize) -> Self {
         let bindings = KeyBindings::default();
-        let log = LogFile::new(bindings.clone(), file, db, total_rows);
+        let log = LogFile::new(columns, bindings.clone(), file, db, total_rows);
 
         AppState {
             log,

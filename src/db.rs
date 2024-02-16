@@ -61,7 +61,11 @@ impl DbApi {
     }
 }
 
-fn db_thread(columns: Vec<ColumnDefinition>, requests: mpsc::Receiver<DbRequest>, responses: mpsc::Sender<DbResponse>) {
+fn db_thread(
+    columns: Vec<ColumnDefinition>,
+    requests: mpsc::Receiver<DbRequest>,
+    responses: mpsc::Sender<DbResponse>,
+) {
     thread::spawn(move || {
         let mut conn = Connection::open("threaded_batched.db").unwrap();
 
@@ -120,7 +124,9 @@ pub fn get_rows(
                 let val = match column.column_type {
                     ColumnType::String => RowValue::String(row.get::<_, String>(idx).unwrap()),
                     ColumnType::Date => RowValue::Date(row.get::<_, i64>(idx).unwrap()),
-                    ColumnType::Enumeration(_) => RowValue::Integer(row.get::<_, i64>(idx).unwrap()),
+                    ColumnType::Enumeration(_) => {
+                        RowValue::Integer(row.get::<_, i64>(idx).unwrap())
+                    }
                 };
 
                 values.push(val);
@@ -155,9 +161,9 @@ fn create_database(columns: &[ColumnDefinition]) {
 
     for (idx, column) in columns.iter().enumerate() {
         let col_type_string = match column.column_type {
-            ColumnType::String => { "TEXT" }
-            ColumnType::Date => { "INTEGER" }
-            ColumnType::Enumeration(_) => { "INTEGER" }
+            ColumnType::String => "TEXT",
+            ColumnType::Date => "INTEGER",
+            ColumnType::Enumeration(_) => "INTEGER",
         };
 
         sql += &format!(", Column{idx} {col_type_string} not null");
@@ -184,19 +190,30 @@ pub fn consumer(columns: usize, recv: mpsc::Receiver<Vec<DbLogRow>>, batch_size:
 
         for rows in recv {
             let mut sql_values: Vec<&dyn ToSql> = Vec::with_capacity(batch_size * 8);
-
             for row_values in rows.iter() {
                 for value in row_values {
                     match value {
-                        RowValue::String(val) => {sql_values.push(bump.alloc(val))}
-                        RowValue::Date(val) => {sql_values.push(bump.alloc(val))}
-                        RowValue::Integer(val) => {sql_values.push(bump.alloc(val))}
+                        RowValue::String(val) => sql_values.push(bump.alloc(val)),
+                        RowValue::Date(val) => sql_values.push(bump.alloc(val)),
+                        RowValue::Integer(val) => sql_values.push(bump.alloc(val)),
                     }
                 }
             }
 
-            stmt.execute(rusqlite::params_from_iter(sql_values))
+            if rows.len() != batch_size {
+                let mut sql = format!("(NULL{}),", ",?".repeat(columns)).repeat(rows.len());
+                sql.pop();
+                let query = format!("INSERT INTO row VALUES {}", sql);
+
+                conn.execute(
+                    &query,
+                    rusqlite::params_from_iter(sql_values),
+                )
                 .unwrap();
+            } else {
+                stmt.execute(rusqlite::params_from_iter(sql_values))
+                    .unwrap();
+            }
 
             bump.reset();
         }

@@ -8,7 +8,7 @@ use super::columns::{ColumnList, ColumnSetting};
 use super::KeyBindings;
 use crate::db::{DbApi, DbLogRow, DbResponse};
 use crate::logalang::FilterRule;
-use crate::parse::{LogRow, RowValue};
+use crate::parse::{ColumnDefinition, LogRow, RowValue};
 
 #[derive(Default)]
 pub struct LogRows {
@@ -42,66 +42,34 @@ pub struct LogFile {
 }
 
 impl LogFile {
-    pub fn new(bindings: KeyBindings, file: String, mut db: DbApi, total_rows: usize) -> Self {
+    pub fn new(
+        columns: Vec<ColumnDefinition>,
+        bindings: KeyBindings,
+        file: String,
+        mut db: DbApi,
+        total_rows: usize,
+    ) -> Self {
         db.get_rows(0, 300, vec![]);
 
+        let mut column_settings = Vec::new();
+        column_settings.push(ColumnSetting {
+            index: 0,
+            name: "Id".into(),
+            visible: true,
+            width: Constraint::Length(4),
+        });
+
+        for (idx, column) in columns.iter().enumerate() {
+            column_settings.push(ColumnSetting {
+                index: idx + 1,
+                name: column.nice_name.clone(),
+                visible: true,
+                width: column.column_width,
+            })
+        }
+
         let columns = ColumnList::new(
-            vec![
-                ColumnSetting {
-                    index: 0,
-                    name: "Id".into(),
-                    visible: true,
-                    width: Constraint::Length(4),
-                },
-                ColumnSetting {
-                    index: 1,
-                    name: "Time".into(),
-                    visible: true,
-                    width: Constraint::Length(23),
-                },
-                ColumnSetting {
-                    index: 2,
-                    name: "Level".into(),
-                    visible: true,
-                    width: Constraint::Length(5),
-                },
-                ColumnSetting {
-                    index: 3,
-                    name: "Context".into(),
-                    visible: true,
-                    width: Constraint::Length(10),
-                },
-                ColumnSetting {
-                    index: 4,
-                    name: "Thread".into(),
-                    visible: true,
-                    width: Constraint::Length(5),
-                },
-                ColumnSetting {
-                    index: 5,
-                    name: "File".into(),
-                    visible: true,
-                    width: Constraint::Length(30),
-                },
-                ColumnSetting {
-                    index: 6,
-                    name: "Method".into(),
-                    visible: true,
-                    width: Constraint::Length(10),
-                },
-                ColumnSetting {
-                    index: 7,
-                    name: "Object".into(),
-                    visible: true,
-                    width: Constraint::Length(5),
-                },
-                ColumnSetting {
-                    index: 8,
-                    name: "Message".into(),
-                    visible: true,
-                    width: Constraint::Percentage(100),
-                },
-            ],
+            column_settings,
             &bindings,
         );
 
@@ -388,7 +356,7 @@ fn row_value_to_cell(row: RowValue) -> Cell<'static> {
 
             Cell::new(format!("{}", time.format("%y-%m-%d %T%.3f")))
         }
-        RowValue::Integer(val) => Cell::new(format!("{val}"))
+        RowValue::Integer(val) => Cell::new(format!("{val}")),
     }
 }
 
