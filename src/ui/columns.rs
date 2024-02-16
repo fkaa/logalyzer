@@ -17,7 +17,7 @@ pub struct ColumnSetting {
 
 pub struct ColumnList {
     state: ListState,
-    items: Vec<ColumnSetting>,
+    pub items: Vec<ColumnSetting>,
     up: KeyBinding,
     down: KeyBinding,
     mark: KeyBinding,

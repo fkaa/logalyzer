@@ -6,7 +6,7 @@ use tui_textarea::TextArea;
 use super::cheat_sheet::CheatSheet;
 use super::columns::{ColumnList, ColumnSetting};
 use super::KeyBindings;
-use crate::db::{DbApi, DbLogRow};
+use crate::db::{DbApi, DbLogRow, DbResponse};
 use crate::logalang::FilterRule;
 
 #[derive(Default)]
@@ -32,6 +32,7 @@ pub struct LogFile {
     rows: LogRows,
     mode: Mode,
     bindings: KeyBindings,
+    max_id_row_width: u32,
 
     filter_text_area: TextArea<'static>,
 
@@ -115,11 +116,33 @@ impl LogFile {
             mode: Mode::Normal,
             filter_text_area: TextArea::default(),
             columns,
+            max_id_row_width: 0,
             bindings,
         }
     }
 
+    fn on_rows_received(&mut self, response: DbResponse) {
+        self.rows.offset = response.offset;
+        self.rows.rows = response.rows;
+
+        // TODO: ugly
+        self.max_id_row_width = self
+            .rows
+            .rows
+            .iter()
+            .map(|r| r.id)
+            .max()
+            .map(|id| id.ilog10() + 1)
+            .unwrap_or(4);
+        self.columns.items[0].width = Constraint::Length(self.max_id_row_width as u16);
+    }
+
     pub fn draw(&mut self, area: Rect, frame: &mut Frame) {
+        while let Some(resp) = self.db.get_response() {
+            self.on_rows_received(resp);
+            self.loading = false;
+        }
+
         let widths = self.columns.to_column_constraints();
 
         let rows = self
@@ -236,8 +259,7 @@ impl LogFile {
 
     pub fn input(&mut self, event: &Event) {
         while let Some(resp) = self.db.get_response() {
-            self.rows.offset = resp.offset;
-            self.rows.rows = resp.rows;
+            self.on_rows_received(resp);
             self.loading = false;
         }
 
