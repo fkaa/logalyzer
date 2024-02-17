@@ -1,3 +1,5 @@
+use std::{thread, time};
+use std::ops::Range;
 use crossterm::event;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::{prelude::*, widgets::*};
@@ -31,6 +33,7 @@ pub struct LogFile {
     should_quit: bool,
     loading: bool,
     rows: LogRows,
+    renderable_rows: u16,
     mode: Mode,
     bindings: KeyBindings,
     max_id_row_width: u32,
@@ -57,7 +60,7 @@ impl LogFile {
             index: 0,
             name: "Id".into(),
             visible: true,
-            width: Constraint::Length(4),
+            width: Constraint::Length(8),
         });
 
         for (idx, column) in columns.iter().enumerate() {
@@ -86,6 +89,7 @@ impl LogFile {
             max_id_row_width: 0,
             bindings,
             show_preview: false,
+            renderable_rows: 0,
         }
     }
 
@@ -177,6 +181,7 @@ impl LogFile {
 
         let layout = Layout::new(Direction::Vertical, constraints).split(area);
 
+        self.renderable_rows = layout[0].height - 2; // -1 column header, -1 spacing
         frame.render_stateful_widget(table, layout[0], &mut self.table_state);
 
         if self.show_preview {
@@ -356,17 +361,17 @@ impl LogFile {
                 .get_rows(0usize, min_items_to_read, self.get_filters());
             self.table_state.select(Some(0));
             *self.table_state.offset_mut() = 0;
-        } else if position > (self.total_rows - min_items_to_read - 1) {
-            let start_pos = self.total_rows - min_items_to_read - 1;
+        } else if position > (self.total_rows - min_items_to_read) {
+            let start_pos = self.total_rows - min_items_to_read;
             self.db
                 .get_rows(start_pos, min_items_to_read, self.get_filters());
-            self.table_state.select(Some(300)); // Select the last item in the current buffer
-            *self.table_state.offset_mut() = 300;
+            self.table_state.select(Some(299)); // Select the last item
+            *self.table_state.offset_mut() = (300 - self.renderable_rows) as usize; // Offset the visible items to show the last item at bottom
         } else {
             self.db
                 .get_rows(position, min_items_to_read, self.get_filters());
-            self.table_state.select(Some(150)); // Select middle item
-            *self.table_state.offset_mut() = 150;
+            self.table_state.select(Some(149)); // Select middle item
+            *self.table_state.offset_mut() = (149 - self.renderable_rows / 2) as usize;
         }
     }
 }
