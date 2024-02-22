@@ -2,7 +2,10 @@ use crossterm::event::{Event, KeyCode};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::prelude::{Line, Modifier, Style};
 use ratatui::style::Color;
-use ratatui::widgets::{Block, Borders, Clear, HighlightSpacing, List, ListItem, ListState, Row};
+use ratatui::text::Span;
+use ratatui::widgets::{
+    Block, Borders, Cell, Clear, HighlightSpacing, List, ListItem, ListState, Row,
+};
 use ratatui::Frame;
 
 use crate::ui::cheat_sheet::CheatSheet;
@@ -47,18 +50,38 @@ impl ColumnList {
     }
 
     pub(crate) fn get_header_row(&self) -> Row {
+        Row::new(self.get_header_row_internal())
+    }
+
+    pub(crate) fn get_header_row_numbered(&self) -> Row {
         Row::new(
-            self.items
+            self.get_header_row_internal()
                 .iter()
-                .filter_map(|c| {
-                    if c.visible {
-                        Some(c.name.clone())
-                    } else {
-                        None
-                    }
+                .enumerate()
+                .map(|a| {
+                    Cell::new(Line::from(vec![
+                        Span::styled(
+                            format!("[{}]", a.0 + 1),
+                            Style::new().bg(Color::Green).fg(Color::White),
+                        ),
+                        Span::raw(a.1.clone()),
+                    ]))
                 })
                 .collect::<Vec<_>>(),
         )
+    }
+
+    fn get_header_row_internal(&self) -> Vec<String> {
+        self.items
+            .iter()
+            .filter_map(|c| {
+                if c.visible {
+                    Some(c.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
     }
 
     pub(crate) fn to_list_items(&self) -> Vec<ListItem<'static>> {

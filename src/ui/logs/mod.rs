@@ -1,16 +1,14 @@
-use std::{thread, time};
-use std::ops::Range;
-use crossterm::event;
+use crossterm::event::{self, KeyEventKind};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::{prelude::*, widgets::*};
 use tui_textarea::TextArea;
 
-use super::cheat_sheet::CheatSheet;
+use super::cheat_sheet::{CheatSheet, Key, KeyBinding};
 use super::columns::{ColumnList, ColumnSetting};
 use super::KeyBindings;
 use crate::db::{DbApi, DbLogRow, DbResponse};
 use crate::logalang::FilterRule;
-use crate::parse::{ColumnDefinition, LogRow, RowValue};
+use crate::parse::{ColumnDefinition, RowValue};
 
 #[derive(Default)]
 pub struct LogRows {
@@ -20,7 +18,8 @@ pub struct LogRows {
 
 enum Mode {
     Normal,
-    Filter,
+    FilterSelection,
+    FilterInput,
     Columns,
 }
 
@@ -124,10 +123,14 @@ impl LogFile {
             .map(|r| db_row_to_ui_row(r, &self.columns.get_settings()))
             .collect::<Vec<_>>();
 
+        let header = if let Mode::FilterSelection = self.mode {
+            self.columns.get_header_row_numbered()
+        } else {
+            self.columns.get_header_row()
+        };
         let table = Table::new(rows, widths)
             .header(
-                self.columns
-                    .get_header_row()
+                header
                     .style(Style::new())
                     // To add space between the header and the rest of the rows, specify the margin
                     .bottom_margin(1),
@@ -169,8 +172,9 @@ impl LogFile {
                 text = msg.clone().replace('↵', "\n");
             }
         }
-        let preview_window =
-            Paragraph::new(text).block(Block::new().borders(Borders::ALL).title("Preview")).wrap(Wrap { trim: false });
+        let preview_window = Paragraph::new(text)
+            .block(Block::new().borders(Borders::ALL).title("Preview"))
+            .wrap(Wrap { trim: false });
 
         let mut constraints = Vec::new();
         constraints.push(Constraint::Percentage(100));
@@ -200,7 +204,7 @@ impl LogFile {
             &mut self.scrollbar_state,
         );
 
-        if let Mode::Filter = self.mode {
+        if let Mode::FilterInput = self.mode {
             self.filter_text_area.set_block(
                 Block::default()
                     .title("Edit filter(s)")
@@ -262,7 +266,10 @@ impl LogFile {
             Mode::Normal => {
                 self.handle_normal_input(&event);
             }
-            Mode::Filter => {
+            Mode::FilterSelection => {
+                self.handle_filter_selection(event);
+            }
+            Mode::FilterInput => {
                 if let Event::Key(key) = &event {
                     if key.kind == event::KeyEventKind::Press {
                         self.handle_filter_input(key);
@@ -297,9 +304,26 @@ impl LogFile {
         }
     }
 
+    fn handle_filter_selection(&mut self, event: &Event) {
+        for (idx, col_item) in self.columns.items.iter().enumerate() {
+            let bind = KeyBinding::new(
+                "".into(),
+                vec![Key(
+                    None,
+                    KeyCode::Char(char::from_digit((idx + 1) as u32, 10).unwrap()),
+                )],
+            );
+
+            if bind.is_pressed(event) {
+                self.mode = Mode::FilterInput;
+                break;
+            }
+        }
+    }
+
     fn handle_normal_input(&mut self, event: &Event) {
         if self.bindings.filter.is_pressed(event) {
-            self.mode = Mode::Filter;
+            self.mode = Mode::FilterSelection;
         } else if self.bindings.columns.is_pressed(event) {
             self.mode = Mode::Columns;
         } else if self.bindings.quit.is_pressed(event) {
@@ -366,7 +390,8 @@ impl LogFile {
             self.db
                 .get_rows(start_pos, min_items_to_read, self.get_filters());
             self.table_state.select(Some(299)); // Select the last item
-            *self.table_state.offset_mut() = (300 - self.renderable_rows) as usize; // Offset the visible items to show the last item at bottom
+            *self.table_state.offset_mut() = (300 - self.renderable_rows) as usize;
+        // Offset the visible items to show the last item at bottom
         } else {
             self.db
                 .get_rows(position, min_items_to_read, self.get_filters());
