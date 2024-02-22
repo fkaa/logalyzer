@@ -5,10 +5,6 @@ use std::sync::mpsc;
 use std::time::Instant;
 
 use crate::db::DbLogRow;
-use crate::parse::ParserInstruction::{
-    Begin, EmitDate, EmitEnumeration, EmitRemainder, EmitString, Skip, SkipUntilChar,
-    SkipUntilString,
-};
 use chrono::NaiveDate;
 use log::warn;
 use ratatui::layout::Constraint;
@@ -55,7 +51,11 @@ impl ColumnDefinition {
         }
     }
 
-    pub fn enumeration(nice_name: String, column_width: Constraint, enumerations: Vec<String>) -> Self {
+    pub fn enumeration(
+        nice_name: String,
+        column_width: Constraint,
+        enumerations: Vec<String>,
+    ) -> Self {
         ColumnDefinition {
             nice_name,
             column_type: ColumnType::Enumeration(enumerations),
@@ -151,104 +151,6 @@ pub struct LogRow {
     pub method: Range<u16>,
     pub object: Range<u16>,
     pub message: u16,
-}
-
-impl LogRow {
-    pub fn context(&self) -> &str {
-        &self.line[self.context.start as usize..self.context.end as usize]
-    }
-
-    pub fn thread(&self) -> &str {
-        &self.line[self.thread.start as usize..self.thread.end as usize]
-    }
-
-    pub fn file(&self) -> &str {
-        &self.line[self.file.start as usize..self.file.end as usize]
-            .rsplit_once('\\')
-            .unwrap()
-            .1
-    }
-
-    pub fn method(&self) -> &str {
-        &self.line[self.method.start as usize..self.method.end as usize]
-    }
-
-    pub fn object(&self) -> &str {
-        &self.line[self.object.start as usize..self.object.end as usize]
-    }
-
-    pub fn message(&self) -> &str {
-        &self.line[self.message as usize..]
-    }
-}
-
-fn parse_line(line: String) -> Option<LogRow> {
-    let rest = &line;
-    let level_start = 25;
-    let level_end = level_start + rest[level_start..].find(' ')?;
-
-    let level = match &line[level_start..level_end] {
-        "TRACE" => TRACE,
-        "INFO" => INFO,
-        "DEBUG" => DEBUG,
-        "WARN" => WARN,
-        "ERROR" => ERROR,
-        "FATAL" => FATAL,
-        _ => -1,
-    };
-
-    let context_start = level_end + rest[level_end..].find('[')? + 1;
-    let context_end = context_start + rest[context_start..].find("] ")?;
-
-    let thread_start = context_end + 3;
-    let thread_end = thread_start + rest[thread_start..].find("] ")?;
-
-    let file_start = thread_end + 2;
-    let file_end = file_start + rest[file_start..].find(",  ")?;
-
-    let method_start = file_end + 3;
-    let method_end = method_start + rest[method_start..].find(" <")?;
-
-    let object_start = method_end + 2;
-    let object_end = object_start + rest[object_start..].find("> - ")?;
-
-    let message_start = object_end + 4;
-
-    let timestr = &line[..23];
-
-    let (y, rest) = timestr.split_once("-")?;
-    let (m, rest) = rest.split_once("-")?;
-    let (d, rest) = rest.split_once(" ")?;
-    let (h, rest) = rest.split_once(":")?;
-    let (min, rest) = rest.split_once(":")?;
-    let (s, ms) = rest.split_once(",")?;
-
-    let y = y.parse::<i32>().ok()?;
-    let m = m.parse::<u32>().ok()?;
-    let d = d.parse::<u32>().ok()?;
-    let h = h.parse::<u32>().ok()?;
-    let min = min.parse::<u32>().ok()?;
-    let s = s.parse::<u32>().ok()?;
-    let ms = ms.parse::<u32>().ok()?;
-
-    let time_unixtime = NaiveDate::from_ymd_opt(y, m, d)?
-        .and_hms_milli_opt(h, min, s, ms)
-        .unwrap();
-    let time_unixtime = time_unixtime.timestamp_millis();
-
-    Some(LogRow {
-        line,
-        time: 23,
-        time_unixtime,
-        level,
-        //level: level_start as u16..level_end as u16,
-        context: context_start as u16..context_end as u16,
-        thread: thread_start as u16..thread_end as u16,
-        file: file_start as u16..file_end as u16,
-        method: method_start as u16..method_end as u16,
-        object: object_start as u16..object_end as u16,
-        message: message_start as u16,
-    })
 }
 
 pub fn producer(
