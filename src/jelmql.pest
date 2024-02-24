@@ -2,12 +2,26 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 OPERATOR = { OR | AND }
 	OR = { "|" }
     AND = { "&" }
+NOT = { "!" }
+EXACT = { "@" }
 STRING = @{ CHAR+ ~ (WHITESPACE ~ CHAR+)* }
-BANNED_CHAR = _{ OPERATOR | PARENTHESES | "\\" }
+BANNED_CHAR = _{
+	OPERATOR |
+    PARENTHESES |
+    NOT |
+    EXACT |
+    "\\"
+}
 ESCAPED_CHAR = { "\\" ~ BANNED_CHAR }
-CHAR = { (!(BANNED_CHAR | WHITESPACE) | ESCAPED_CHAR) ~ (ESCAPED_CHAR | ANY) }
+CHAR = {
+	(
+    	!(BANNED_CHAR | WHITESPACE)
+    	| ESCAPED_CHAR
+    )
+	~ (ESCAPED_CHAR | ANY)
+}
 PARENTHESES = { "(" | ")" }
 
-ATOM = _{ STRING | "(" ~ EXPR ~ ")" }
+ATOM = { NOT? ~ EXACT? ~ (STRING | "(" ~ EXPR ~ ")") }
 EXPR = { ATOM ~ (OPERATOR ~ ATOM)* }
 QUERY = _{ SOI ~ EXPR ~ EOI }
