@@ -336,6 +336,7 @@ dependencies = [
  "pest_derive",
  "ratatui",
  "rusqlite",
+ "smallvec",
  "tui-logger",
  "tui-textarea",
  "unicode-bom",

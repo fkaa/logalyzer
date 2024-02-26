@@ -8,6 +8,7 @@ use crate::db::DbLogRow;
 use chrono::NaiveDate;
 use log::warn;
 use ratatui::layout::Constraint;
+use smallvec::SmallVec;
 use unicode_bom::Bom;
 
 pub const TRACE: i8 = 0;
@@ -67,7 +68,7 @@ impl ColumnDefinition {
 #[derive(Clone, Debug)]
 pub struct Row {
     pub line: String,
-    pub values: Vec<ParsedRowValue>,
+    pub values: SmallVec<[ParsedRowValue; 10]>,
 }
 
 #[derive(Clone, Debug)]
@@ -93,7 +94,7 @@ impl Parser {
     pub fn parse_line(&self, line: String) -> Result<Row, (String, String)> {
         use ParserInstruction::*;
 
-        let mut values = Vec::new();
+        let mut values = SmallVec::new();
 
         let mut index = 0usize;
         let mut begin_index = 0;
