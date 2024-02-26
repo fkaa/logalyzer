@@ -65,8 +65,14 @@ impl ColumnDefinition {
 }
 
 #[derive(Clone, Debug)]
-pub enum RowValue {
-    String(String),
+pub struct Row {
+    pub line: String,
+    pub values: Vec<ParsedRowValue>,
+}
+
+#[derive(Clone, Debug)]
+pub enum ParsedRowValue {
+    String { start: u32, end: i32 },
     Date(i64),
     Integer(i64),
 }
@@ -84,7 +90,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_line(&self, line: &str) -> Result<Vec<RowValue>, String> {
+    pub fn parse_line(&self, line: String) -> Result<Row, (String, String)> {
         use ParserInstruction::*;
 
         let mut values = Vec::new();
@@ -96,26 +102,32 @@ impl Parser {
             match i {
                 EmitDate => {
                     let date_str = &line[begin_index..index];
-                    let date =
-                        parse_datetime(date_str).ok_or(format!("Invalid datetime {date_str}"))?;
+                    let date = parse_datetime(date_str)
+                        .ok_or_else(|| (line.clone(), format!("Invalid datetime {date_str}")))?;
 
-                    values.push(RowValue::Date(date));
+                    values.push(ParsedRowValue::Date(date));
                 }
                 EmitString => {
                     let date = &line[begin_index..index];
-                    values.push(RowValue::String(date.to_string()));
+                    values.push(ParsedRowValue::String {
+                        start: begin_index as _,
+                        end: index as _,
+                    });
                 }
                 EmitEnumeration(enums) => {
                     let value = &line[begin_index..index];
                     let idx = enums
                         .iter()
                         .position(|e| e == value)
-                        .ok_or(format!("Unknown enum {value}"))?;
-                    values.push(RowValue::Integer(idx as _));
+                        .ok_or_else(|| (line.clone(), format!("Unknown enum {value}")))?;
+                    values.push(ParsedRowValue::Integer(idx as _));
                 }
                 EmitRemainder => {
                     let date = &line[begin_index..];
-                    values.push(RowValue::String(date.to_string()));
+                    values.push(ParsedRowValue::String {
+                        start: begin_index as _,
+                        end: -1,
+                    });
                 }
                 Begin => begin_index = index,
                 Skip(amount) => index += *amount as usize,
@@ -124,7 +136,7 @@ impl Parser {
             }
         }
 
-        Ok(values)
+        Ok(Row { line, values })
     }
 }
 
@@ -153,12 +165,7 @@ pub struct LogRow {
     pub message: u16,
 }
 
-pub fn producer(
-    send: mpsc::SyncSender<Vec<DbLogRow>>,
-    path: &str,
-    parser: Parser,
-    batch_size: usize,
-) {
+pub fn producer(send: mpsc::SyncSender<Vec<Row>>, path: &str, parser: Parser, batch_size: usize) {
     let bom = getbom(path);
     let mut reader = BufReader::new(File::open(path).unwrap());
 
@@ -175,27 +182,23 @@ pub fn producer(
 
     for line in reader.lines() {
         let line = line.unwrap();
-        match parser.parse_line(&line) {
-            Ok(values) => {
-                if let Some(row) = latest_parsed_row.take() {
-                    batch.push(row);
+        match parser.parse_line(line) {
+            Ok(row) => {
+                if let Some(last_row) = latest_parsed_row.take() {
+                    batch.push(last_row);
                     if batch.len() >= batch_size {
                         let old_vec = std::mem::replace(&mut batch, Vec::new());
                         send.send(old_vec).unwrap();
                     }
                 }
-                latest_parsed_row = Some(values);
+                latest_parsed_row = Some(row);
 
                 i += 1;
             }
-            Err(e) => {
+            Err((line, e)) => {
                 warn!("Error while parsing line: {e}");
                 if let Some(mut row) = latest_parsed_row.take() {
-                    if let Some(last) = row.last_mut() {
-                        if let RowValue::String(ref mut s) = last {
-                            *s += &line;
-                        }
-                    }
+                    row.line += &line;
                 }
             }
         };

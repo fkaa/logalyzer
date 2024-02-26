@@ -7,7 +7,7 @@ use std::time::Instant;
 use rusqlite::{params, Connection, ToSql};
 
 use crate::logalang::FilterRule;
-use crate::parse::{ColumnDefinition, ColumnType, LogRow, RowValue};
+use crate::parse::{ColumnDefinition, ColumnType, LogRow, ParsedRowValue, Row};
 
 pub struct DbResponse {
     pub id: u32,
@@ -21,6 +21,13 @@ pub struct DbRequest {
     pub offset: usize,
     pub limit: usize,
     pub filters: Vec<FilterRule>,
+}
+
+#[derive(Clone, Debug)]
+pub enum DbRowValue {
+    String(String),
+    Date(i64),
+    Integer(i64),
 }
 
 pub struct DbApi {
@@ -90,7 +97,7 @@ pub fn get_row_count() -> usize {
         .unwrap()
 }
 
-pub type DbLogRow = Vec<RowValue>;
+pub type DbLogRow = Vec<DbRowValue>;
 
 pub fn get_rows(
     conn: &mut Connection,
@@ -116,16 +123,16 @@ pub fn get_rows(
         .query_map(params![limit, offset], |row| {
             let mut values = Vec::new();
 
-            values.push(RowValue::Integer(row.get::<_, i64>(0).unwrap()));
+            values.push(DbRowValue::Integer(row.get::<_, i64>(0).unwrap()));
 
             for (idx, column) in columns.iter().enumerate() {
                 let idx = idx + 1;
 
                 let val = match column.column_type {
-                    ColumnType::String => RowValue::String(row.get::<_, String>(idx).unwrap()),
-                    ColumnType::Date => RowValue::Date(row.get::<_, i64>(idx).unwrap()),
+                    ColumnType::String => DbRowValue::String(row.get::<_, String>(idx).unwrap()),
+                    ColumnType::Date => DbRowValue::Date(row.get::<_, i64>(idx).unwrap()),
                     ColumnType::Enumeration(_) => {
-                        RowValue::Integer(row.get::<_, i64>(idx).unwrap())
+                        DbRowValue::Integer(row.get::<_, i64>(idx).unwrap())
                     }
                 };
 
@@ -174,7 +181,7 @@ fn create_database(columns: &[ColumnDefinition]) {
     conn.execute(&sql, []).unwrap();
 }
 
-pub fn consumer(columns: usize, recv: mpsc::Receiver<Vec<DbLogRow>>, batch_size: usize) {
+pub fn consumer(columns: usize, recv: mpsc::Receiver<Vec<Row>>, batch_size: usize) {
     let mut conn = Connection::open("threaded_batched.db").unwrap();
 
     let now = Instant::now();
@@ -190,12 +197,19 @@ pub fn consumer(columns: usize, recv: mpsc::Receiver<Vec<DbLogRow>>, batch_size:
 
         for rows in recv {
             let mut sql_values: Vec<&dyn ToSql> = Vec::with_capacity(batch_size * 8);
-            for row_values in rows.iter() {
-                for value in row_values {
+            for row in rows.iter() {
+                for value in &row.values {
                     match value {
-                        RowValue::String(val) => sql_values.push(bump.alloc(val)),
-                        RowValue::Date(val) => sql_values.push(bump.alloc(val)),
-                        RowValue::Integer(val) => sql_values.push(bump.alloc(val)),
+                        ParsedRowValue::String { start, end } => {
+                            if *end == -1 {
+                                sql_values.push(bump.alloc(&row.line[*start as usize..]))
+                            } else {
+                                sql_values
+                                    .push(bump.alloc(&row.line[*start as usize..*end as usize]))
+                            }
+                        }
+                        ParsedRowValue::Date(val) => sql_values.push(bump.alloc(val)),
+                        ParsedRowValue::Integer(val) => sql_values.push(bump.alloc(val)),
                     }
                 }
             }
@@ -205,11 +219,8 @@ pub fn consumer(columns: usize, recv: mpsc::Receiver<Vec<DbLogRow>>, batch_size:
                 sql.pop();
                 let query = format!("INSERT INTO row VALUES {}", sql);
 
-                conn.execute(
-                    &query,
-                    rusqlite::params_from_iter(sql_values),
-                )
-                .unwrap();
+                conn.execute(&query, rusqlite::params_from_iter(sql_values))
+                    .unwrap();
             } else {
                 stmt.execute(rusqlite::params_from_iter(sql_values))
                     .unwrap();

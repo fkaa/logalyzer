@@ -1,14 +1,16 @@
 use crossterm::event::{self, KeyEventKind};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::{prelude::*, widgets::*};
+use std::ops::Range;
+use std::{thread, time};
 use tui_textarea::TextArea;
 
 use super::cheat_sheet::{CheatSheet, Key, KeyBinding};
 use super::columns::{ColumnList, ColumnSetting};
 use super::KeyBindings;
-use crate::db::{DbApi, DbLogRow, DbResponse};
+use crate::db::{DbApi, DbLogRow, DbResponse, DbRowValue};
 use crate::logalang::FilterRule;
-use crate::parse::{ColumnDefinition, RowValue};
+use crate::parse::{ColumnDefinition, ParsedRowValue};
 
 #[derive(Default)]
 pub struct LogRows {
@@ -168,7 +170,7 @@ impl LogFile {
 
         let mut text = String::new();
         if let Some(selected_row) = &self.rows.rows.get(self.table_state.selected().unwrap()) {
-            if let RowValue::String(msg) = selected_row.last().unwrap() {
+            if let DbRowValue::String(msg) = selected_row.last().unwrap() {
                 text = msg.clone().replace('↵', "\n");
             }
         }
@@ -401,15 +403,15 @@ impl LogFile {
     }
 }
 
-fn row_value_to_cell(row: RowValue) -> Cell<'static> {
+fn row_value_to_cell(row: DbRowValue) -> Cell<'static> {
     match row {
-        RowValue::String(val) => Cell::new(val),
-        RowValue::Date(time) => {
+        DbRowValue::String(val) => Cell::new(val),
+        DbRowValue::Date(time) => {
             let time = chrono::DateTime::UNIX_EPOCH + chrono::Duration::milliseconds(time);
 
             Cell::new(format!("{}", time.format("%y-%m-%d %T%.3f")))
         }
-        RowValue::Integer(val) => Cell::new(format!("{val}")),
+        DbRowValue::Integer(val) => Cell::new(format!("{val}")),
     }
 }
 
