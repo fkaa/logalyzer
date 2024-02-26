@@ -183,6 +183,13 @@ fn create_database(columns: &[ColumnDefinition]) {
 
 pub fn consumer(columns: usize, recv: mpsc::Receiver<Vec<Row>>, batch_size: usize) {
     let mut conn = Connection::open("threaded_batched.db").unwrap();
+    conn.execute_batch(
+        "PRAGMA journal_mode = OFF;
+              PRAGMA synchronous = 0;
+              PRAGMA cache_size = 1000000;
+              PRAGMA locking_mode = EXCLUSIVE;",
+    )
+    .expect("PRAGMA");
 
     let now = Instant::now();
     let mut bump = bumpalo::Bump::new();

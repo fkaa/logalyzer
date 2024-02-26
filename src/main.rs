@@ -22,7 +22,7 @@ mod logalang;
 mod parse;
 mod ui;
 
-const BATCH_SIZE: usize = 64;
+const BATCH_SIZE: usize = 16;
 
 fn main() -> io::Result<()> {
     tui_logger::init_logger(log::LevelFilter::Trace).unwrap();
@@ -72,10 +72,12 @@ fn get_parser() -> Parser {
         vec![
             Begin,
             Skip(23),
+            // Date
             EmitDate,
             Skip(2),
             Begin,
             SkipUntilChar(' '),
+            // Level
             EmitEnumeration(vec![
                 "TRACE".into(),
                 "DEBUG".into(),
@@ -88,27 +90,33 @@ fn get_parser() -> Parser {
             Skip(1),
             Begin,
             SkipUntilChar(']'),
+            // Context
             EmitString,
             SkipUntilChar('['),
             Skip(1),
             Begin,
             SkipUntilChar(']'),
+            // Thread
             EmitString,
             Skip(2),
             Begin,
             SkipUntilChar(','),
+            // File
             EmitString,
             Skip(3),
             Begin,
             SkipUntilString(" <".into()),
+            // Method
             EmitString,
             Skip(2),
             Begin,
             SkipUntilChar('>'),
+            // Object
             EmitString,
             SkipUntilChar('-'),
             Skip(2),
             Begin,
+            // Message
             EmitRemainder,
         ],
         vec![
