@@ -7,18 +7,11 @@ use std::time::Instant;
 use chrono::NaiveDate;
 use log::warn;
 use ratatui::layout::Constraint;
+use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use unicode_bom::Bom;
 
-pub const TRACE: i8 = 0;
-pub const INFO: i8 = 1;
-pub const DEBUG: i8 = 2;
-pub const WARN: i8 = 3;
-pub const ERROR: i8 = 4;
-pub const FATAL: i8 = 5;
-
-// {Datetime:DATE} {Level:ENUM(TRACE,INFO,DEBUG,WARN,ERROR,FATAL)} {Context:WORD} {Thread:WORD}
-// {File:WORD} {Method:WORD} {Object:WORD} {Message:REST}
+use crate::config::{LogFormatConfiguration, LogFormatInstruction};
 
 #[derive(Clone)]
 pub enum ColumnType {
@@ -77,6 +70,69 @@ pub enum ParsedRowValue {
     Integer(i64),
 }
 
+impl From<LogFormatConfiguration> for Parser {
+    fn from(val: LogFormatConfiguration) -> Self {
+        let mut instructions = Vec::new();
+        let mut columns = Vec::new();
+
+        for syn in val.syntax {
+            match syn {
+                LogFormatInstruction::EmitDate { name, width } => {
+                    instructions.push(ParserInstruction::EmitDate);
+                    columns.push(ColumnDefinition::date(
+                        name,
+                        Constraint::Length(width as u16),
+                    ));
+                }
+                LogFormatInstruction::EmitString { name, width } => {
+                    instructions.push(ParserInstruction::EmitString);
+                    columns.push(ColumnDefinition::string(
+                        name,
+                        Constraint::Length(width as u16),
+                    ));
+                }
+                LogFormatInstruction::EmitEnumeration {
+                    name,
+                    width,
+                    enumerations,
+                } => {
+                    instructions.push(ParserInstruction::EmitEnumeration(enumerations.clone()));
+                    columns.push(ColumnDefinition::enumeration(
+                        name,
+                        Constraint::Length(width as u16),
+                        enumerations,
+                    ));
+                }
+                LogFormatInstruction::EmitRemainder { name, width } => {
+                    instructions.push(ParserInstruction::EmitRemainder);
+
+                    columns.push(ColumnDefinition::string(
+                        name,
+                        if width < 0 {
+                            Constraint::Percentage(100)
+                        } else {
+                            Constraint::Length(width as u16)
+                        },
+                    ));
+                }
+                LogFormatInstruction::Begin => instructions.push(ParserInstruction::Begin),
+                LogFormatInstruction::Skip(amt) => instructions.push(ParserInstruction::Skip(amt)),
+                LogFormatInstruction::SkipUntilChar(c) => {
+                    instructions.push(ParserInstruction::SkipUntilChar(c))
+                }
+                LogFormatInstruction::SkipUntilString(s) => {
+                    instructions.push(ParserInstruction::SkipUntilString(s))
+                }
+            }
+        }
+
+        Parser {
+            instructions,
+            columns,
+        }
+    }
+}
+
 pub struct Parser {
     instructions: Vec<ParserInstruction>,
     pub columns: Vec<ColumnDefinition>,
@@ -108,7 +164,6 @@ impl Parser {
                     values.push(ParsedRowValue::Date(date));
                 }
                 EmitString => {
-                    let _date = &line[begin_index..index];
                     values.push(ParsedRowValue::String {
                         start: begin_index as _,
                         end: index as _,
@@ -123,7 +178,6 @@ impl Parser {
                     values.push(ParsedRowValue::Integer(idx as _));
                 }
                 EmitRemainder => {
-                    let _date = &line[begin_index..];
                     values.push(ParsedRowValue::String {
                         start: begin_index as _,
                         end: -1,
@@ -140,6 +194,7 @@ impl Parser {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub enum ParserInstruction {
     EmitDate,
     EmitString,
@@ -165,7 +220,12 @@ pub struct LogRow {
     pub message: u16,
 }
 
-pub fn producer(send: mpsc::SyncSender<Vec<Row>>, path: &str, parser: Parser, batch_size: usize) {
+pub fn producer(
+    send: mpsc::SyncSender<SmallVec<[Row; 16]>>,
+    path: &str,
+    parser: Parser,
+    batch_size: usize,
+) {
     let bom = getbom(path);
     let mut reader = BufReader::new(File::open(path).unwrap());
 
@@ -174,7 +234,7 @@ pub fn producer(send: mpsc::SyncSender<Vec<Row>>, path: &str, parser: Parser, ba
         let _y = reader.read_exact(&mut x);
     }
 
-    let mut batch = Vec::new();
+    let mut batch = SmallVec::new();
 
     let now = Instant::now();
     let mut i = 0;
@@ -187,7 +247,7 @@ pub fn producer(send: mpsc::SyncSender<Vec<Row>>, path: &str, parser: Parser, ba
                 if let Some(last_row) = latest_parsed_row.take() {
                     batch.push(last_row);
                     if batch.len() >= batch_size {
-                        let old_vec = std::mem::replace(&mut batch, Vec::new());
+                        let old_vec = std::mem::replace(&mut batch, SmallVec::new());
                         send.send(old_vec).unwrap();
                     }
                 }
@@ -244,82 +304,4 @@ fn getbom(path: &str) -> Bom {
 }
 
 #[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_parse_line_2() {
-        use ParserInstruction::*;
-
-        let parser = Parser::new(
-            vec![
-                Begin,
-                Skip(23),
-                EmitDate,
-                Skip(2),
-                Begin,
-                SkipUntilChar(' '),
-                EmitEnumeration(vec![
-                    "TRACE".into(),
-                    "DEBUG".into(),
-                    "INFO".into(),
-                    "WARN".into(),
-                    "ERROR".into(),
-                    "FATAL".into(),
-                ]),
-                SkipUntilChar('['),
-                Skip(1),
-                Begin,
-                SkipUntilChar(']'),
-                EmitString,
-                SkipUntilChar('['),
-                Skip(1),
-                Begin,
-                SkipUntilChar(']'),
-                EmitString,
-                Skip(2),
-                Begin,
-                SkipUntilChar(','),
-                EmitString,
-                Skip(3),
-                Begin,
-                SkipUntilString(" <".into()),
-                EmitString,
-                Skip(2),
-                Begin,
-                SkipUntilChar('>'),
-                EmitString,
-                SkipUntilChar('-'),
-                Skip(2),
-                Begin,
-                EmitRemainder,
-            ],
-            vec![],
-        );
-
-        let a = parser.parse_line("2023-12-04 01:12:30,690  DEBUG [] [  24] CA.Core\\WebProxy\\TcpConnection\\TcpConnection.cs(73),  Open <> - Setting up secure connection [73fc :: 95bf]");
-        let a = parser.parse_line("2024-01-11 02:40:52,860  DEBUG [0.1.Facades-56.WindowsClient-0.1686.] [  25] Axis.MediaStreaming\\BufferingDataSpanReader.cs(80),  Start <6518> - Start");
-
-        dbg!(a);
-        parser.parse_line("2023-12-08 09:45:01,199  INFO  [0.1.Facades-38.WindowsClient-0.5969.32.] [ 489] Server\\Common\\DatabaseHandling\\Private\\FirebirdService.cs(481),  DoGbakBackup <> - gbak:    writing privilege for user SYSDBA");
-
-        todo!();
-    }
-
-    #[test]
-    fn test_parse_line() {
-        let line = parse_line("2023-12-04 01:12:30,690  DEBUG [] [  24] CA.Core\\WebProxy\\TcpConnection\\TcpConnection.cs(73),  Open <> - Setting up secure connection [73fc :: 95bf]".into()).unwrap();
-
-        // assert_eq!(line.time(), "2023-12-04 01:12:30,690");
-        assert_eq!(line.level, 2);
-        assert_eq!(line.context(), "");
-        assert_eq!(line.thread(), "  24");
-        assert_eq!(line.file(), "TcpConnection.cs(73)");
-        assert_eq!(line.method(), "Open");
-        assert_eq!(line.object(), "");
-        assert_eq!(
-            line.message(),
-            "Setting up secure connection [73fc :: 95bf]"
-        );
-    }
-}
+mod test {}

@@ -16,6 +16,7 @@ pub struct ColumnSetting {
     pub name: String,
     pub visible: bool,
     pub width: Constraint,
+    pub enumerations: Vec<String>,
 }
 
 pub struct ColumnList {

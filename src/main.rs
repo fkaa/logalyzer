@@ -1,10 +1,11 @@
+use std::fs;
 use std::io::{self, stdout};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
 use crate::db::DbApi;
-use crate::parse::ParserInstruction;
+
 use crate::parse::{ColumnDefinition, Parser};
 use crate::ui::AppState;
 use crossterm::{
@@ -14,9 +15,10 @@ use crossterm::{
     ExecutableCommand,
 };
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::Constraint;
+
 use ratatui::Terminal;
 
+mod config;
 mod db;
 mod logalang;
 mod parse;
@@ -67,58 +69,63 @@ fn main() -> io::Result<()> {
 }
 
 fn get_parser() -> Parser {
-    use ParserInstruction::*;
+    let toml = fs::read_to_string("log4net.toml").unwrap();
+    let config = toml::from_str::<config::LogFormatConfiguration>(&toml).unwrap();
+    config.into()
+    /*use ParserInstruction::*;
+    let inst = vec![
+        Begin,
+        Skip(23),
+        // Date
+        EmitDate,
+        Skip(2),
+        Begin,
+        SkipUntilChar(' '),
+        // Level
+        EmitEnumeration(vec![
+            "TRACE".into(),
+            "DEBUG".into(),
+            "INFO".into(),
+            "WARN".into(),
+            "ERROR".into(),
+            "FATAL".into(),
+        ]),
+        SkipUntilChar('['),
+        Skip(1),
+        Begin,
+        SkipUntilChar(']'),
+        // Context
+        EmitString,
+        SkipUntilChar('['),
+        Skip(1),
+        Begin,
+        SkipUntilChar(']'),
+        // Thread
+        EmitString,
+        Skip(2),
+        Begin,
+        SkipUntilChar(','),
+        // File
+        EmitString,
+        Skip(3),
+        Begin,
+        SkipUntilString(" <".into()),
+        // Method
+        EmitString,
+        Skip(2),
+        Begin,
+        SkipUntilChar('>'),
+        // Object
+        EmitString,
+        SkipUntilChar('-'),
+        Skip(2),
+        Begin,
+        // Message
+        EmitRemainder,
+    ];
+
     let parser = Parser::new(
-        vec![
-            Begin,
-            Skip(23),
-            // Date
-            EmitDate,
-            Skip(2),
-            Begin,
-            SkipUntilChar(' '),
-            // Level
-            EmitEnumeration(vec![
-                "TRACE".into(),
-                "DEBUG".into(),
-                "INFO".into(),
-                "WARN".into(),
-                "ERROR".into(),
-                "FATAL".into(),
-            ]),
-            SkipUntilChar('['),
-            Skip(1),
-            Begin,
-            SkipUntilChar(']'),
-            // Context
-            EmitString,
-            SkipUntilChar('['),
-            Skip(1),
-            Begin,
-            SkipUntilChar(']'),
-            // Thread
-            EmitString,
-            Skip(2),
-            Begin,
-            SkipUntilChar(','),
-            // File
-            EmitString,
-            Skip(3),
-            Begin,
-            SkipUntilString(" <".into()),
-            // Method
-            EmitString,
-            Skip(2),
-            Begin,
-            SkipUntilChar('>'),
-            // Object
-            EmitString,
-            SkipUntilChar('-'),
-            Skip(2),
-            Begin,
-            // Message
-            EmitRemainder,
-        ],
+        inst,
         vec![
             ColumnDefinition::date("Date".to_string(), Constraint::Length(23)),
             ColumnDefinition::enumeration(
@@ -141,7 +148,7 @@ fn get_parser() -> Parser {
             ColumnDefinition::string("Message".to_string(), Constraint::Percentage(100)),
         ],
     );
-    parser
+    parser*/
 }
 
 fn run_ui(columns: Vec<ColumnDefinition>, file: &String, db: DbApi, rows: usize) -> io::Result<()> {

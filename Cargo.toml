@@ -19,3 +19,5 @@ log = "0.4.20"
 tui-logger = { version = "0.10.1", default-features = false, features = ["crossterm"] }
 assert_matches = "1.5.0"
 smallvec = "1.13.1"
+serde = { version = "1.0.197", features = ["derive"] }
+toml = "0.8.10"

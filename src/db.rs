@@ -3,6 +3,7 @@ use std::thread;
 use std::time::Instant;
 
 use rusqlite::{params, Connection, ToSql};
+use smallvec::SmallVec;
 
 use crate::logalang::FilterRule;
 use crate::parse::{ColumnDefinition, ColumnType, ParsedRowValue, Row};
@@ -179,7 +180,7 @@ fn create_database(columns: &[ColumnDefinition]) {
     conn.execute(&sql, []).unwrap();
 }
 
-pub fn consumer(columns: usize, recv: mpsc::Receiver<Vec<Row>>, batch_size: usize) {
+pub fn consumer(columns: usize, recv: mpsc::Receiver<SmallVec<[Row; 16]>>, batch_size: usize) {
     let mut conn = Connection::open("threaded_batched.db").unwrap();
     conn.execute_batch(
         "PRAGMA journal_mode = OFF;

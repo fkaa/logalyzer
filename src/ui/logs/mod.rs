@@ -9,7 +9,7 @@ use super::columns::{ColumnList, ColumnSetting};
 use super::KeyBindings;
 use crate::db::{DbApi, DbLogRow, DbResponse, DbRowValue};
 use crate::logalang::FilterRule;
-use crate::parse::ColumnDefinition;
+use crate::parse::{ColumnDefinition, ColumnType};
 
 #[derive(Default)]
 pub struct LogRows {
@@ -61,6 +61,7 @@ impl LogFile {
             name: "Id".into(),
             visible: true,
             width: Constraint::Length(8),
+            enumerations: vec![],
         });
 
         for (idx, column) in columns.iter().enumerate() {
@@ -69,6 +70,11 @@ impl LogFile {
                 name: column.nice_name.clone(),
                 visible: true,
                 width: column.column_width,
+                enumerations: if let ColumnType::Enumeration(enums) = &column.column_type {
+                    enums.clone()
+                } else {
+                    vec![]
+                },
             })
         }
 
@@ -422,23 +428,38 @@ fn db_row_to_ui_row<'a, 'b>(rows: &'a DbLogRow, settings: &'b [ColumnSetting]) -
             continue;
         }
 
-        let cell = row_value_to_cell(row.clone());
+        let cell = if setting.enumerations.len() > 0 {
+            let DbRowValue::Integer(v) = row else {
+                panic!("hmm");
+            };
+            level_to_cell(*v as i8, &setting.enumerations)
+        } else {
+            row_value_to_cell(row.clone())
+        };
+
         cells.push(cell);
     }
 
     Row::new(cells)
 }
 
-fn level_to_cell(level: i8) -> Cell<'static> {
-    match level {
-        crate::parse::TRACE => Cell::new("TRACE").style(Style::new().fg(Color::Gray)),
-        crate::parse::INFO => Cell::new("INFO"),
-        crate::parse::DEBUG => Cell::new("DEBUG").style(Style::new().fg(Color::Gray)),
-        crate::parse::WARN => Cell::new("WARN").style(Style::new().fg(Color::Yellow)),
-        crate::parse::ERROR => Cell::new("ERROR").style(Style::new().fg(Color::Red)),
-        crate::parse::FATAL => Cell::new("FATAL").style(Style::new().fg(Color::Red)),
-        _ => Cell::new("UNKNWN"),
+fn level_to_cell(level: i8, enumerations: &[String]) -> Cell<'static> {
+    let colors = [
+        Some(Color::Gray),
+        None,
+        Some(Color::Gray),
+        Some(Color::Yellow),
+        Some(Color::Red),
+        Some(Color::Red),
+    ];
+
+    let mut cell = Cell::new(enumerations[level as usize].clone());
+
+    if let Some(Some(col)) = colors.get(level as usize) {
+        cell = cell.style(Style::new().fg(*col));
     }
+
+    cell
 }
 
 fn is_scroll_up(event: &Event) -> bool {
