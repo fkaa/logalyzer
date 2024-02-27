@@ -1,5 +1,5 @@
-use std::iter::Enumerate;
-use std::slice::Iter;
+
+
 use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
@@ -7,7 +7,7 @@ use std::time::Instant;
 use rusqlite::{params, Connection, ToSql};
 
 use crate::logalang::FilterRule;
-use crate::parse::{ColumnDefinition, ColumnType, LogRow, ParsedRowValue, Row};
+use crate::parse::{ColumnDefinition, ColumnType, ParsedRowValue, Row};
 
 pub struct DbResponse {
     pub id: u32,
@@ -153,7 +153,7 @@ pub fn sanitize_filter(filter: &str) -> String {
 }
 
 fn create_database(columns: &[ColumnDefinition]) {
-    let mut conn = Connection::open("threaded_batched.db").unwrap();
+    let conn = Connection::open("threaded_batched.db").unwrap();
     conn.execute_batch(
         "PRAGMA journal_mode = OFF;
               PRAGMA synchronous = 0;

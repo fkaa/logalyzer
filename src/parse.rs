@@ -4,7 +4,7 @@ use std::ops::Range;
 use std::sync::mpsc;
 use std::time::Instant;
 
-use crate::db::DbLogRow;
+
 use chrono::NaiveDate;
 use log::warn;
 use ratatui::layout::Constraint;
@@ -109,7 +109,7 @@ impl Parser {
                     values.push(ParsedRowValue::Date(date));
                 }
                 EmitString => {
-                    let date = &line[begin_index..index];
+                    let _date = &line[begin_index..index];
                     values.push(ParsedRowValue::String {
                         start: begin_index as _,
                         end: index as _,
@@ -124,7 +124,7 @@ impl Parser {
                     values.push(ParsedRowValue::Integer(idx as _));
                 }
                 EmitRemainder => {
-                    let date = &line[begin_index..];
+                    let _date = &line[begin_index..];
                     values.push(ParsedRowValue::String {
                         start: begin_index as _,
                         end: -1,
@@ -209,7 +209,7 @@ pub fn producer(send: mpsc::SyncSender<Vec<Row>>, path: &str, parser: Parser, ba
         //}
     }
 
-    if let Some(mut row) = latest_parsed_row.take() {
+    if let Some(row) = latest_parsed_row.take() {
         batch.push(row);
     }
     send.send(batch).unwrap();

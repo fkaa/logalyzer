@@ -1,8 +1,8 @@
-use crossterm::event::{self, KeyEventKind};
+use crossterm::event::{self};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::{prelude::*, widgets::*};
-use std::ops::Range;
-use std::{thread, time};
+
+
 use tui_textarea::TextArea;
 
 use super::cheat_sheet::{CheatSheet, Key, KeyBinding};
@@ -10,7 +10,7 @@ use super::columns::{ColumnList, ColumnSetting};
 use super::KeyBindings;
 use crate::db::{DbApi, DbLogRow, DbResponse, DbRowValue};
 use crate::logalang::FilterRule;
-use crate::parse::{ColumnDefinition, ParsedRowValue};
+use crate::parse::{ColumnDefinition};
 
 #[derive(Default)]
 pub struct LogRows {
@@ -307,7 +307,7 @@ impl LogFile {
     }
 
     fn handle_filter_selection(&mut self, event: &Event) {
-        for (idx, col_item) in self.columns.items.iter().enumerate() {
+        for (idx, _col_item) in self.columns.items.iter().enumerate() {
             let bind = KeyBinding::new(
                 "".into(),
                 vec![Key(
