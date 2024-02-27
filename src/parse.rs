@@ -4,7 +4,6 @@ use std::ops::Range;
 use std::sync::mpsc;
 use std::time::Instant;
 
-
 use chrono::NaiveDate;
 use log::warn;
 use ratatui::layout::Constraint;

@@ -14,8 +14,8 @@ mod logs;
 
 use cheat_sheet::{Key, KeyBinding};
 
-use logs::LogFile;
 use crate::parse::ColumnDefinition;
+use logs::LogFile;
 
 #[derive(Clone)]
 pub struct KeyBindings {
@@ -53,7 +53,7 @@ impl Default for KeyBindings {
                 "Console".into(),
                 vec![Key(Some(KeyModifiers::CONTROL), Char('c'))],
             ),
-            preview: KeyBinding::new("Preview".into(), vec![Key(None, Char('p'))])
+            preview: KeyBinding::new("Preview".into(), vec![Key(None, Char('p'))]),
         }
     }
 }
@@ -66,7 +66,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(columns: Vec<ColumnDefinition>,file: String, db: DbApi, total_rows: usize) -> Self {
+    pub fn new(columns: Vec<ColumnDefinition>, file: String, db: DbApi, total_rows: usize) -> Self {
         let bindings = KeyBindings::default();
         let log = LogFile::new(columns, bindings.clone(), file, db, total_rows);
 

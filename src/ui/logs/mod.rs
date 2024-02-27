@@ -2,7 +2,6 @@ use crossterm::event::{self};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::{prelude::*, widgets::*};
 
-
 use tui_textarea::TextArea;
 
 use super::cheat_sheet::{CheatSheet, Key, KeyBinding};
@@ -10,7 +9,7 @@ use super::columns::{ColumnList, ColumnSetting};
 use super::KeyBindings;
 use crate::db::{DbApi, DbLogRow, DbResponse, DbRowValue};
 use crate::logalang::FilterRule;
-use crate::parse::{ColumnDefinition};
+use crate::parse::ColumnDefinition;
 
 #[derive(Default)]
 pub struct LogRows {
