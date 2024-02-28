@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::{self, stdout};
-use std::sync::mpsc;
+use std::sync::{atomic::AtomicU64, mpsc, Arc};
 use std::thread;
 use std::time::Instant;
 
@@ -23,6 +23,14 @@ mod db;
 mod logalang;
 mod parse;
 mod ui;
+
+#[derive(Default)]
+pub struct LoadingProgress {
+    pub total_bytes: AtomicU64,
+    pub parsed_bytes: AtomicU64,
+    pub rows_parsed: AtomicU64,
+    pub rows_inserted: AtomicU64,
+}
 
 const BATCH_SIZE: usize = 16;
 
@@ -48,22 +56,30 @@ fn main() -> io::Result<()> {
 
     let (send, recv) = mpsc::sync_channel(16);
 
+    let progress = Arc::new(LoadingProgress::default());
+
     let columns = parser.columns.clone();
-
     let column_count = parser.columns.len();
-    let handle = thread::spawn(move || {
-        db::consumer(column_count, recv, BATCH_SIZE);
+
+    let db_progress = progress.clone();
+    let db_handle = thread::spawn(move || {
+        db::consumer(column_count, recv, BATCH_SIZE, db_progress);
     });
-    parse::producer(send, &file, parser, BATCH_SIZE);
-
-    handle.join().unwrap();
-
-    let rows = db::get_row_count();
-    println!("Program done in {:.2?} ({rows} rows)", now.elapsed());
+    let parse_progress = progress.clone();
+    let parse_file = file.to_string();
+    let parse_handle = thread::spawn(move || {
+        parse::producer(send, parse_file, parser, BATCH_SIZE, parse_progress);
+    });
 
     if first != "parse" {
-        run_ui(columns, file, db, rows)?;
+        run_ui(columns, file, db, progress)?;
     }
+
+    // let rows = db::get_row_count();
+    // println!("Program done in {:.2?} ({rows} rows)", now.elapsed());
+
+    db_handle.join().unwrap();
+    parse_handle.join().unwrap();
 
     Ok(())
 }
@@ -72,97 +88,26 @@ fn get_parser() -> Parser {
     let toml = fs::read_to_string("log4net.toml").unwrap();
     let config = toml::from_str::<config::LogFormatConfiguration>(&toml).unwrap();
     config.into()
-    /*use ParserInstruction::*;
-    let inst = vec![
-        Begin,
-        Skip(23),
-        // Date
-        EmitDate,
-        Skip(2),
-        Begin,
-        SkipUntilChar(' '),
-        // Level
-        EmitEnumeration(vec![
-            "TRACE".into(),
-            "DEBUG".into(),
-            "INFO".into(),
-            "WARN".into(),
-            "ERROR".into(),
-            "FATAL".into(),
-        ]),
-        SkipUntilChar('['),
-        Skip(1),
-        Begin,
-        SkipUntilChar(']'),
-        // Context
-        EmitString,
-        SkipUntilChar('['),
-        Skip(1),
-        Begin,
-        SkipUntilChar(']'),
-        // Thread
-        EmitString,
-        Skip(2),
-        Begin,
-        SkipUntilChar(','),
-        // File
-        EmitString,
-        Skip(3),
-        Begin,
-        SkipUntilString(" <".into()),
-        // Method
-        EmitString,
-        Skip(2),
-        Begin,
-        SkipUntilChar('>'),
-        // Object
-        EmitString,
-        SkipUntilChar('-'),
-        Skip(2),
-        Begin,
-        // Message
-        EmitRemainder,
-    ];
-
-    let parser = Parser::new(
-        inst,
-        vec![
-            ColumnDefinition::date("Date".to_string(), Constraint::Length(23)),
-            ColumnDefinition::enumeration(
-                "Level".to_string(),
-                Constraint::Length(5),
-                vec![
-                    "TRACE".into(),
-                    "DEBUG".into(),
-                    "INFO".into(),
-                    "WARN".into(),
-                    "ERROR".into(),
-                    "FATAL".into(),
-                ],
-            ),
-            ColumnDefinition::string("Context".to_string(), Constraint::Length(8)),
-            ColumnDefinition::string("Thread".to_string(), Constraint::Length(8)),
-            ColumnDefinition::string("File".to_string(), Constraint::Length(8)),
-            ColumnDefinition::string("Method".to_string(), Constraint::Length(8)),
-            ColumnDefinition::string("Object".to_string(), Constraint::Length(8)),
-            ColumnDefinition::string("Message".to_string(), Constraint::Percentage(100)),
-        ],
-    );
-    parser*/
 }
 
-fn run_ui(columns: Vec<ColumnDefinition>, file: &String, db: DbApi, rows: usize) -> io::Result<()> {
+fn run_ui(
+    columns: Vec<ColumnDefinition>,
+    file: &String,
+    db: DbApi,
+    progress: Arc<LoadingProgress>,
+) -> io::Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
     stdout().execute(EnableMouseCapture)?;
 
     std::panic::set_hook(Box::new(move |info| {
         let _ = restore_terminal();
-        println!("{:?}", info)
+        println!("{:#?}", info.location());
+        println!("{:#?}", info)
     }));
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
-    let mut app_state = AppState::new(columns, file.clone(), db, rows);
+    let mut app_state = AppState::new(columns, file.clone(), db, progress);
 
     while !app_state.should_quit() {
         terminal.draw(|f| app_state.draw(f))?;

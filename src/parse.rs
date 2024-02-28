@@ -1,7 +1,11 @@
+use std::cell::RefCell;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{self, BufRead, BufReader, Read, Seek};
 use std::ops::Range;
-use std::sync::mpsc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    mpsc, Arc,
+};
 use std::time::Instant;
 
 use chrono::NaiveDate;
@@ -12,6 +16,42 @@ use smallvec::SmallVec;
 use unicode_bom::Bom;
 
 use crate::config::{LogFormatConfiguration, LogFormatInstruction};
+use crate::LoadingProgress;
+
+struct ReaderWithPos<R> {
+    pos: Arc<AtomicU64>,
+    inner: R,
+}
+
+impl<R> ReaderWithPos<R> {
+    fn new(pos: Arc<AtomicU64>, inner: R) -> Self {
+        ReaderWithPos { pos, inner }
+    }
+}
+
+impl<R: BufRead> BufRead for ReaderWithPos<R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        let buf = self.inner.fill_buf()?;
+        // self.pos.fetch_add(buf.len() as u64, Ordering::SeqCst);
+
+        Ok(buf)
+    }
+
+    fn consume(&mut self, val: usize) {
+        self.pos.fetch_add(val as u64, Ordering::SeqCst);
+        self.inner.consume(val)
+    }
+}
+
+impl<R: Read> Read for ReaderWithPos<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let bytes_read = self.inner.read(buf)?;
+
+        self.pos.fetch_add(bytes_read as u64, Ordering::SeqCst);
+
+        Ok(bytes_read)
+    }
+}
 
 #[derive(Clone)]
 pub enum ColumnType {
@@ -222,12 +262,18 @@ pub struct LogRow {
 
 pub fn producer(
     send: mpsc::SyncSender<SmallVec<[Row; 16]>>,
-    path: &str,
+    path: String,
     parser: Parser,
     batch_size: usize,
+    progress: Arc<LoadingProgress>,
 ) {
-    let bom = getbom(path);
-    let mut reader = BufReader::new(File::open(path).unwrap());
+    let bom = getbom(&path);
+    let file = File::open(path).unwrap();
+    let total_size = file.metadata().unwrap().len();
+    progress.total_bytes.store(total_size, Ordering::SeqCst);
+
+    let pos = Arc::new(AtomicU64::new(0));
+    let mut reader = ReaderWithPos::new(pos.clone(), BufReader::new(file));
 
     if bom != Bom::Null {
         let mut x = [0; 3];
@@ -240,7 +286,7 @@ pub fn producer(
     let mut i = 0;
     let mut latest_parsed_row = None;
 
-    for line in reader.lines() {
+    for line in reader.by_ref().lines() {
         let line = line.unwrap();
         match parser.parse_line(line) {
             Ok(row) => {
@@ -248,6 +294,9 @@ pub fn producer(
                     batch.push(last_row);
                     if batch.len() >= batch_size {
                         let old_vec = std::mem::replace(&mut batch, SmallVec::new());
+                        progress
+                            .rows_parsed
+                            .fetch_add(old_vec.len() as _, Ordering::SeqCst);
                         send.send(old_vec).unwrap();
                     }
                 }
@@ -263,14 +312,17 @@ pub fn producer(
             }
         };
 
-        //if let Some(row) = parse_line(line) {
-
-        //}
+        progress
+            .parsed_bytes
+            .store(pos.load(Ordering::SeqCst), Ordering::SeqCst);
     }
 
     if let Some(row) = latest_parsed_row.take() {
         batch.push(row);
     }
+    progress
+        .rows_parsed
+        .fetch_add(batch.len() as _, Ordering::SeqCst);
     send.send(batch).unwrap();
 
     println!("Reading {i} lines took {:.2?}", now.elapsed());

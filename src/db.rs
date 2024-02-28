@@ -1,4 +1,4 @@
-use std::sync::mpsc;
+use std::sync::{atomic::Ordering, mpsc, Arc};
 use std::thread;
 use std::time::Instant;
 
@@ -7,6 +7,7 @@ use smallvec::SmallVec;
 
 use crate::logalang::FilterRule;
 use crate::parse::{ColumnDefinition, ColumnType, ParsedRowValue, Row};
+use crate::LoadingProgress;
 
 pub struct DbResponse {
     pub id: u32,
@@ -180,7 +181,12 @@ fn create_database(columns: &[ColumnDefinition]) {
     conn.execute(&sql, []).unwrap();
 }
 
-pub fn consumer(columns: usize, recv: mpsc::Receiver<SmallVec<[Row; 16]>>, batch_size: usize) {
+pub fn consumer(
+    columns: usize,
+    recv: mpsc::Receiver<SmallVec<[Row; 16]>>,
+    batch_size: usize,
+    progress: Arc<LoadingProgress>,
+) {
     let mut conn = Connection::open("threaded_batched.db").unwrap();
     conn.execute_batch(
         "PRAGMA journal_mode = OFF;
@@ -231,6 +237,10 @@ pub fn consumer(columns: usize, recv: mpsc::Receiver<SmallVec<[Row; 16]>>, batch
                 stmt.execute(rusqlite::params_from_iter(sql_values))
                     .unwrap();
             }
+
+            progress
+                .rows_inserted
+                .fetch_add(rows.len() as u64, Ordering::SeqCst);
 
             bump.reset();
         }
