@@ -5,7 +5,7 @@ use std::time::Duration;
 use bytesize::ByteSize;
 use crossterm::event;
 use crossterm::event::{KeyCode, KeyModifiers};
-use ratatui::style::palette::tailwind::{BLUE, GREEN};
+use ratatui::style::palette::tailwind::{GREEN};
 use ratatui::{prelude::*, widgets::*};
 use tui_logger::{TuiLoggerLevelOutput, TuiLoggerWidget};
 

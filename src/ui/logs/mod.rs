@@ -103,16 +103,21 @@ impl LogFile {
         self.rows.offset = response.offset;
         self.rows.rows = response.rows;
 
-        // TODO: ugly
-        /*self.max_id_row_width = self
+        self.max_id_row_width = self
             .rows
             .rows
             .iter()
-            .map(|r| r.id)
+            .map(|r| {
+                if let DbRowValue::Integer(val) = r[0] {
+                    val
+                } else {
+                    0
+                }
+            })
             .max()
             .map(|id| id.ilog10() + 1)
             .unwrap_or(4);
-        self.columns.items[0].width = Constraint::Length(self.max_id_row_width as u16);*/
+        self.columns.items[0].width = Constraint::Length(self.max_id_row_width as u16);
     }
 
     pub fn draw(&mut self, area: Rect, frame: &mut Frame) {

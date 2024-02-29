@@ -1,6 +1,5 @@
-use std::cell::RefCell;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read, Seek};
+use std::io::{self, BufRead, BufReader, Read};
 use std::ops::Range;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
@@ -179,13 +178,6 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(instructions: Vec<ParserInstruction>, columns: Vec<ColumnDefinition>) -> Self {
-        Parser {
-            instructions,
-            columns,
-        }
-    }
-
     pub fn parse_line(&self, line: String) -> Result<Row, (String, String)> {
         use ParserInstruction::*;
 

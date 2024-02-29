@@ -33,7 +33,6 @@ pub enum DbRowValue {
 pub struct DbApi {
     sender: mpsc::Sender<DbRequest>,
     receiver: mpsc::Receiver<DbResponse>,
-    columns: Vec<ColumnDefinition>,
 }
 
 impl DbApi {
@@ -46,7 +45,6 @@ impl DbApi {
         db_thread(columns.clone(), req_recv, resp_send);
 
         DbApi {
-            columns,
             sender: req_send,
             receiver: resp_recv,
         }

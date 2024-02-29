@@ -2,7 +2,6 @@ use std::fs;
 use std::io::{self, stdout};
 use std::sync::{atomic::AtomicU64, mpsc, Arc};
 use std::thread;
-use std::time::Instant;
 
 use crate::db::DbApi;
 
@@ -38,7 +37,6 @@ fn main() -> io::Result<()> {
     tui_logger::init_logger(log::LevelFilter::Trace).unwrap();
     tui_logger::set_default_level(log::LevelFilter::Trace);
 
-    let now = Instant::now();
     if let Err(e) = std::fs::remove_file("threaded_batched.db") {
         eprintln!("{e}");
     }
