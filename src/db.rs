@@ -9,11 +9,17 @@ use crate::logalang::FilterRule;
 use crate::parse::{ColumnDefinition, ColumnType, ParsedRowValue, Row};
 use crate::LoadingProgress;
 
-pub struct DbResponse {
-    pub id: u32,
-    pub offset: usize,
-    pub limit: usize,
-    pub rows: Vec<DbLogRow>,
+pub enum DbResponse {
+    FilterApplied {
+        id: u32,
+        total_filtered_rows: usize,
+    },
+    RowsFetched {
+        id: u32,
+        offset: usize,
+        limit: usize,
+        rows: Vec<DbLogRow>,
+    },
 }
 
 pub struct DbRequest {
@@ -78,7 +84,7 @@ fn db_thread(
             let rows = get_rows(&mut conn, req.limit, req.offset, req.filters, &columns);
 
             responses
-                .send(DbResponse {
+                .send(DbResponse::RowsFetched {
                     id: req.id,
                     limit: req.limit,
                     offset: req.offset,

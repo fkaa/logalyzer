@@ -79,6 +79,12 @@ impl std::fmt::Display for Key {
 
         match self.1 {
             KeyCode::Char(c) => write!(fmt, "{c}")?,
+            KeyCode::Up => write!(fmt, "↑")?,
+            KeyCode::Down => write!(fmt, "↓")?,
+            KeyCode::Home => write!(fmt, "Home")?,
+            KeyCode::End => write!(fmt, "End")?,
+            KeyCode::PageUp => write!(fmt, "Page Up")?,
+            KeyCode::PageDown => write!(fmt, "Page Down")?,
             _ => write!(fmt, "TODO")?,
         }
 

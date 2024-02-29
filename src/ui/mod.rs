@@ -5,7 +5,7 @@ use std::time::Duration;
 use bytesize::ByteSize;
 use crossterm::event;
 use crossterm::event::{KeyCode, KeyModifiers};
-use ratatui::style::palette::tailwind::{GREEN};
+use ratatui::style::palette::tailwind::GREEN;
 use ratatui::{prelude::*, widgets::*};
 use tui_logger::{TuiLoggerLevelOutput, TuiLoggerWidget};
 
@@ -25,6 +25,8 @@ use logs::LogFile;
 pub struct KeyBindings {
     pub up: KeyBinding,
     pub down: KeyBinding,
+    pub pg_up: KeyBinding,
+    pub pg_down: KeyBinding,
     pub top: KeyBinding,
     pub bot: KeyBinding,
     pub filter: KeyBinding,
@@ -41,10 +43,12 @@ impl Default for KeyBindings {
         use KeyCode::*;
 
         KeyBindings {
-            up: KeyBinding::new("Up".into(), vec![Key(None, Char('k'))]),
-            down: KeyBinding::new("Down".into(), vec![Key(None, Char('j'))]),
-            top: KeyBinding::new("Top".into(), vec![Key(None, Char('g'))]),
-            bot: KeyBinding::new("Bot".into(), vec![Key(None, Char('G'))]),
+            up: KeyBinding::new("Up".into(), vec![Key(None, Char('k')), Key(None, Up)]),
+            down: KeyBinding::new("Down".into(), vec![Key(None, Char('j')), Key(None, Down)]),
+            pg_up: KeyBinding::new("Page Up".into(), vec![Key(None, PageUp)]),
+            pg_down: KeyBinding::new("Page Down".into(), vec![Key(None, PageDown)]),
+            top: KeyBinding::new("Top".into(), vec![Key(None, Char('g')), Key(None, Home)]),
+            bot: KeyBinding::new("Bot".into(), vec![Key(None, Char('G')), Key(None, End)]),
             filter: KeyBinding::new("Filter".into(), vec![Key(None, Char('f'))]),
             close_filter: KeyBinding::new("Close".into(), vec![Key(None, Esc)]),
             apply_filter: KeyBinding::new(

@@ -99,9 +99,9 @@ impl LogFile {
         }
     }
 
-    fn on_rows_received(&mut self, response: DbResponse) {
-        self.rows.offset = response.offset;
-        self.rows.rows = response.rows;
+    fn on_rows_received(&mut self, offset: usize, rows: Vec<DbLogRow>) {
+        self.rows.offset = offset;
+        self.rows.rows = rows;
 
         self.max_id_row_width = self
             .rows
@@ -122,8 +122,21 @@ impl LogFile {
 
     pub fn draw(&mut self, area: Rect, frame: &mut Frame) {
         while let Some(resp) = self.db.get_response() {
-            self.on_rows_received(resp);
-            self.loading = false;
+            match resp {
+                DbResponse::FilterApplied {
+                    id: _,
+                    total_filtered_rows: _,
+                } => {}
+                DbResponse::RowsFetched {
+                    id: _,
+                    offset,
+                    limit: _,
+                    rows,
+                } => {
+                    self.on_rows_received(offset, rows);
+                    self.loading = false;
+                }
+            }
         }
 
         let widths = self.columns.to_column_constraints();
@@ -269,11 +282,6 @@ impl LogFile {
     }
 
     pub fn input(&mut self, event: &Event) {
-        while let Some(resp) = self.db.get_response() {
-            self.on_rows_received(resp);
-            self.loading = false;
-        }
-
         match self.mode {
             Mode::Normal => {
                 self.handle_normal_input(&event);
@@ -336,20 +344,52 @@ impl LogFile {
     fn handle_normal_input(&mut self, event: &Event) {
         if self.bindings.filter.is_pressed(event) {
             self.mode = Mode::FilterSelection;
-        } else if self.bindings.columns.is_pressed(event) {
+            return;
+        }
+
+        if self.bindings.columns.is_pressed(event) {
             self.mode = Mode::Columns;
-        } else if self.bindings.quit.is_pressed(event) {
-            self.should_quit = true
-        } else if self.bindings.up.is_pressed(event) || is_scroll_up(event) {
+            return;
+        }
+
+        if self.bindings.quit.is_pressed(event) {
+            self.should_quit = true;
+            return;
+        }
+
+        if self.bindings.up.is_pressed(event) || is_scroll_up(event) {
             self.move_selection_relative(-1);
-        } else if self.bindings.down.is_pressed(event) || is_scroll_down(event) {
+            return;
+        }
+
+        if self.bindings.down.is_pressed(event) || is_scroll_down(event) {
             self.move_selection_relative(1);
-        } else if self.bindings.top.is_pressed(event) {
+            return;
+        }
+
+        if self.bindings.pg_up.is_pressed(event) {
+            self.move_selection_relative(-(self.renderable_rows as isize));
+            return;
+        }
+
+        if self.bindings.pg_down.is_pressed(event) {
+            self.move_selection_relative(self.renderable_rows as _);
+            return;
+        }
+
+        if self.bindings.top.is_pressed(event) {
             self.move_selection_fixed(0usize);
-        } else if self.bindings.bot.is_pressed(event) {
+            return;
+        }
+
+        if self.bindings.bot.is_pressed(event) {
             self.move_selection_fixed(self.total_rows);
-        } else if self.bindings.preview.is_pressed(event) {
+            return;
+        }
+
+        if self.bindings.preview.is_pressed(event) {
             self.show_preview = !self.show_preview;
+            return;
         }
     }
 
