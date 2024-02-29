@@ -100,7 +100,7 @@ impl AppState {
             let rows_parsed = self.progress.rows_parsed.load(Ordering::SeqCst);
             let rows_inserted = self.progress.rows_inserted.load(Ordering::SeqCst);
 
-            if total_bytes == parsed_bytes && rows_parsed == rows_inserted {
+            if total_bytes != 0 && total_bytes == parsed_bytes && rows_parsed == rows_inserted {
                 self.log = Some(LogFile::new(
                     self.columns.clone(),
                     self.bindings.clone(),
