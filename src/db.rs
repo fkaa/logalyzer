@@ -246,7 +246,7 @@ pub fn consumer(
         }
     }
     conn.commit().unwrap();
-    println!("Inserting took {:.2?}", now.elapsed());
+    log::info!("Inserting took {:.2?}", now.elapsed());
 }
 
 #[cfg(test)]

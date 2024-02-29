@@ -325,7 +325,7 @@ pub fn producer(
         .fetch_add(batch.len() as _, Ordering::SeqCst);
     send.send(batch).unwrap();
 
-    println!("Reading {i} lines took {:.2?}", now.elapsed());
+    log::info!("Reading {i} lines took {:.2?}", now.elapsed());
 }
 
 fn parse_datetime(date: &str) -> Option<i64> {
