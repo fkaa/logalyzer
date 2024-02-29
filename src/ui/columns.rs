@@ -91,12 +91,10 @@ impl ColumnList {
             .map(|c| {
                 let line = if c.visible {
                     let mut l = Line::from(format!("[x] {}", c.name));
-                    l.patch_style(Style::new().fg(Color::LightGreen));
-                    l
+                    l.patch_style(Style::new().fg(Color::LightGreen))
                 } else {
                     let mut l = Line::from(format!("[ ] {}", c.name));
-                    l.patch_style(Style::new().fg(Color::Gray));
-                    l
+                    l.patch_style(Style::new().fg(Color::Gray))
                 };
 
                 ListItem::new(line)

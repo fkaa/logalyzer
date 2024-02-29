@@ -5,6 +5,7 @@ use std::time::Duration;
 use bytesize::ByteSize;
 use crossterm::event;
 use crossterm::event::{KeyCode, KeyModifiers};
+use ratatui::style::palette::tailwind::{BLUE, GREEN};
 use ratatui::{prelude::*, widgets::*};
 use tui_logger::{TuiLoggerLevelOutput, TuiLoggerWidget};
 
@@ -170,6 +171,7 @@ impl AppState {
                     .block(parse_block)
                     .use_unicode(true)
                     .ratio((parsed_bytes as f64 / total_bytes as f64).clamp(0.0, 1.0))
+                    .gauge_style(GREEN.c600)
                     .label(format!(
                         "{}/{}",
                         ByteSize::b(parsed_bytes),
@@ -183,8 +185,9 @@ impl AppState {
                 let db_gauge = Gauge::default()
                     .block(db_block)
                     .use_unicode(true)
+                    .gauge_style(GREEN.c800)
                     .ratio(if rows_parsed > 0 {
-                        rows_inserted as f64 / rows_parsed as f64
+                        (rows_inserted as f64 / rows_parsed as f64).clamp(0.0, 1.0)
                     } else {
                         0.0
                     })
