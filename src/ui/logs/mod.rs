@@ -2,7 +2,7 @@ use crossterm::event::{self};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::{prelude::*, widgets::*};
 
-use tui_textarea::TextArea;
+use tui_textarea::{CursorMove, Input, TextArea};
 
 use super::cheat_sheet::{CheatSheet, Key, KeyBinding};
 use super::columns::{ColumnList, ColumnSetting};
@@ -39,6 +39,8 @@ pub struct LogFile {
     max_id_row_width: u32,
     show_preview: bool,
 
+    filter_values: Vec<String>,
+    filter_active_value_idx: usize,
     filter_text_area: TextArea<'static>,
 
     // columns
@@ -78,6 +80,7 @@ impl LogFile {
             })
         }
 
+        let columns_count = columns.len();
         let columns = ColumnList::new(column_settings, &bindings);
 
         LogFile {
@@ -96,6 +99,8 @@ impl LogFile {
             bindings,
             show_preview: false,
             renderable_rows: 0,
+            filter_values: vec!["".to_string(); columns_count + 1],
+            filter_active_value_idx: 0,
         }
     }
 
@@ -263,9 +268,9 @@ impl LogFile {
 
     fn get_filters(&self) -> Vec<FilterRule> {
         let mut filters = Vec::new();
-        for line in self.filter_text_area.lines() {
+        for (idx, line) in self.filter_values.iter().enumerate() {
             match crate::logalang::parse_line(line) {
-                Ok(filter) => filters.push(filter),
+                Ok(filter) => filters.push(FilterRule { column_name: format!("Column{idx}"), rules: filter }),
                 Err(e) => log::warn!("invalid filter: {e}"),
             }
         }
@@ -312,7 +317,8 @@ impl LogFile {
 
     fn handle_filter_input(&mut self, key: &KeyEvent) {
         match key.code {
-            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('f') | KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.filter_values[self.filter_active_value_idx] = self.filter_text_area.lines()[0].to_string();
                 self.apply_filter();
                 self.mode = Mode::Normal;
             }
@@ -335,6 +341,9 @@ impl LogFile {
             );
 
             if bind.is_pressed(event) {
+                self.filter_active_value_idx = idx;
+                self.filter_text_area = TextArea::new(vec![self.filter_values[self.filter_active_value_idx].to_string()]);
+                self.filter_text_area.move_cursor(CursorMove::End);
                 self.mode = Mode::FilterInput;
                 break;
             }

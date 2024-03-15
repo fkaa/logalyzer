@@ -8,24 +8,24 @@ use crate::db::sanitize_filter;
 #[grammar = "logalang.pest"]
 pub struct LogalangParser;
 
-pub fn to_filter_rule(rule: Pairs<Rule>) -> FilterRule {
+pub fn to_filter_rule(mut rule: Pairs<Rule>) -> FilterRule {
     let mut column_name = String::new();
-    let mut filters = Vec::new();
 
     // Iterate over pairs
-    for pair in rule {
+    let pair = rule.next().unwrap();
+    let filter = {
         let mut rule_filter_pairs = pair.into_inner();
 
         column_name = rule_filter_pairs.next().unwrap().as_str().to_string();
 
         let filter_pairs = rule_filter_pairs.next().unwrap().into_inner();
         let filter = to_filter(filter_pairs);
-        filters.push(filter);
-    }
+        filter
+    };
 
     FilterRule {
         column_name,
-        rules: filters,
+        rules: filter,
     }
 }
 
@@ -73,23 +73,12 @@ fn to_filter(pairs: Pairs<Rule>) -> Filter {
 #[derive(Debug)]
 pub struct FilterRule {
     pub(crate) column_name: String,
-    pub(crate) rules: Vec<Filter>,
+    pub(crate) rules: Filter,
 }
 
 impl FilterRule {
     pub fn get_sql(&self) -> String {
-        if self.rules.is_empty() {
-            return String::new();
-        }
-
-        format!(
-            "WHERE {}",
-            self.rules
-                .iter()
-                .map(|r| r.get_sql(&self.column_name))
-                .collect::<Vec<_>>()
-                .join(" AND ")
-        )
+        self.rules.get_sql(&self.column_name)
     }
 }
 
@@ -128,10 +117,8 @@ impl Filter {
     }
 }
 
-pub fn parse_line(line: &str) -> Result<FilterRule, pest::error::Error<Rule>> {
-    let result = LogalangParser::parse(Rule::filter, line)?;
-
-    Ok(to_filter_rule(result))
+pub fn parse_line(line: &str) -> Result<Filter, pest::error::Error<Rule>> {
+    return Ok(Filter::ContainsString(line.to_string()));
 }
 
 #[cfg(test)]
@@ -141,18 +128,14 @@ mod test {
 
     #[test]
     fn test_parse_line_into_filter_rule() {
-        let result = parse_line("columnName=\"a\"");
+        let result = parse_line("a");
 
         assert_matches!(
             result,
             Ok(filter) => {
-                assert_eq!(filter.column_name, "columnName");
-
-                assert_matches!(&filter.rules[..], [filter] => {
-                    assert_matches!(filter, Filter::ContainsString(text) => {
-                        assert_eq!(text, "a");
-                    })
-                });
+                assert_matches!(filter, Filter::ContainsString(text) => {
+                    assert_eq!(text, "a");
+                })
             }
         );
     }
@@ -198,70 +181,12 @@ mod test {
     }
 
     #[test]
-    fn filter_rule_get_sql_none() {
-        let filter = FilterRule {
-            column_name: "message".to_string(),
-            rules: vec![],
-        };
-
-        assert_eq!(filter.get_sql(), "");
-    }
-
-    #[test]
     fn filter_rule_get_sql_single() {
         let filter = FilterRule {
             column_name: "message".to_string(),
-            rules: vec![Filter::ContainsString("bla".to_string())],
+            rules: Filter::ContainsString("bla".to_string()),
         };
 
         assert_eq!(filter.get_sql(), "WHERE message LIKE '%bla%'");
-    }
-
-    #[test]
-    fn filter_rule_get_sql_multiple() {
-        let filter = FilterRule {
-            column_name: "message".to_string(),
-            rules: vec![
-                Filter::ContainsString("bla1".to_string()),
-                Filter::ContainsString("bla2".to_string()),
-            ],
-        };
-
-        assert_eq!(
-            filter.get_sql(),
-            "WHERE message LIKE '%bla1%' AND message LIKE '%bla2%'"
-        );
-    }
-
-    #[test]
-    fn test() {
-        let input = "a=\"b\"";
-
-        let mut result = LogalangParser::parse(Rule::filter, input).unwrap();
-
-        let first = result.next().unwrap();
-        assert_eq!(Rule::filter, first.as_rule());
-
-        let matches = first.into_inner().collect::<Vec<_>>();
-        assert_eq!(Rule::column_name, matches[0].as_rule());
-        assert_eq!(Rule::expr, matches[1].as_rule());
-    }
-
-    #[test]
-    fn test2() {
-        let input = "asdf=!\"b1234\"";
-
-        let mut result = LogalangParser::parse(Rule::filter, input).unwrap();
-
-        let first = result.next().unwrap();
-        assert_eq!(Rule::filter, first.as_rule());
-
-        let matches = first.into_inner().collect::<Vec<_>>();
-        assert_eq!(Rule::column_name, matches[0].as_rule());
-        assert_eq!(Rule::expr, matches[1].as_rule());
-
-        let expr_matches = matches[1].clone().into_inner().collect::<Vec<_>>();
-        assert_eq!(Rule::not, expr_matches[0].as_rule());
-        assert_eq!(Rule::string, expr_matches[1].as_rule());
     }
 }

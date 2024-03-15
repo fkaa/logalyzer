@@ -111,9 +111,16 @@ pub fn get_rows(
     columns: &[ColumnDefinition],
 ) -> Vec<DbLogRow> {
     let mut sql = String::new();
-    sql += "SELECT * FROM row ";
+    sql += "SELECT * FROM row";
 
-    for filter in filters {
+    if !filters.is_empty() {
+        sql += " WHERE ";
+    }
+
+    for (idx, filter) in filters.iter().enumerate() {
+        if idx > 0 {
+            sql += " AND ";
+        }
         sql += &filter.get_sql();
     }
 
@@ -167,7 +174,7 @@ fn create_database(columns: &[ColumnDefinition]) {
     .expect("PRAGMA");
 
     let mut sql = "CREATE TABLE IF NOT EXISTS row (
-                id INTEGER not null primary key"
+                Column0 INTEGER not null primary key"
         .to_string();
 
     for (idx, column) in columns.iter().enumerate() {
@@ -177,7 +184,8 @@ fn create_database(columns: &[ColumnDefinition]) {
             ColumnType::Enumeration(_) => "INTEGER",
         };
 
-        sql += &format!(", Column{idx} {col_type_string} not null");
+        let adjusted_idx = idx + 1; // We need to adjust the index since Column0 will always be the ID column
+        sql += &format!(", Column{adjusted_idx} {col_type_string} not null");
     }
 
     sql += ")".into();
